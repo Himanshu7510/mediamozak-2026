@@ -2,7 +2,7 @@
   "use strict";
 
   // Old single-page links like mediamozak.com/#contact → real pages
-  var OLD = { "#about": "/about/", "#services": "/services/", "#faqs": "/faqs/", "#contact": "/contact/", "#privacy": "/privacy-policy/", "#terms": "/terms-and-conditions/", "#blog": "/" };
+  var OLD = { "#about": "/about/", "#services": "/services/", "#faqs": "/faqs/", "#contact": "/contact/", "#privacy": "/privacy-policy/", "#terms": "/terms-and-conditions/", "#blog": "/blog/" };
   if (location.pathname === "/" && OLD[location.hash]) location.replace(OLD[location.hash]);
   if (location.pathname === "/" && /^#service-/.test(location.hash)) location.replace("/services/" + location.hash.slice(9) + "/");
 
