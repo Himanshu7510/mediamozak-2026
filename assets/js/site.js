@@ -15,8 +15,11 @@
     if (typeof window.gtag === "function") window.gtag("event", event, params || {}); // straight to GA4
   }
   document.addEventListener("click", function (e) {
-    var a = e.target.closest && e.target.closest('a[href^="tel:"]');
-    if (a) track("phone_click", { link_url: a.getAttribute("href") });
+    if (!e.target.closest) return;
+    var tel = e.target.closest('a[href^="tel:"]');
+    if (tel) track("lead_phone_call", { link_url: tel.getAttribute("href") });
+    var mail = e.target.closest('a[href^="mailto:"]');
+    if (mail) track("lead_email_click", { link_url: mail.getAttribute("href").split("?")[0] });
   });
 
   // ---------- Mobile menu ----------
@@ -153,7 +156,7 @@
         "*Page:* " + location.href.split("#")[0],
       ].join("\n");
       var url = "https://wa.me/" + WA_NUMBER + "?text=" + encodeURIComponent(text);
-      track("generate_lead", { lead_method: "WhatsApp pop-up", lead_service: vals.service, business_type: vals.business, budget: vals.budget });
+      track("lead_whatsapp_popup", { lead_service: vals.service, business_type: vals.business, budget: vals.budget });
       if (typeof window.fbq === "function") window.fbq("track", "Lead", { content_name: vals.service });
       var win = window.open(url, "_blank"); // runs inside the click, so it isn't blocked
       close();
@@ -283,7 +286,7 @@
 
     // ---- Option 1: WhatsApp — opens a chat with the details pre-filled ----
     if (channel === "WhatsApp") {
-      track("generate_lead", { lead_method: "Contact form - WhatsApp", lead_service: fd.get("service") });
+      track("lead_contact_form_whatsapp", { lead_service: fd.get("service") });
       var waLink = "https://wa.me/" + WHATSAPP_NUMBER + "?text=" + encodeURIComponent(whatsappText(fd));
       var win = window.open(waLink, "_blank"); // must run immediately on click so it isn't blocked
       showSuccess("WhatsApp", waLink);
@@ -294,7 +297,7 @@
     // ---- Option 2: Email — delivered to the Gmail inbox ----
     setBusy(true, "Email");
     sendToEmail(fd).then(function () {
-      track("generate_lead", { lead_method: "Contact form - Email", lead_service: fd.get("service") });
+      track("lead_contact_form_email", { lead_service: fd.get("service") });
       showSuccess("Email");
     }).catch(function () {
       showError('Sorry, your message could not be sent by email. Please try <strong>Send on WhatsApp</strong>, or email us at <a class="underline" href="mailto:' + LEADS_EMAIL + '">' + LEADS_EMAIL + "</a>.");
