@@ -12,6 +12,7 @@
     var data = { event: event };
     for (var k in params) if (Object.prototype.hasOwnProperty.call(params, k)) data[k] = params[k];
     window.dataLayer.push(data);
+    if (typeof window.gtag === "function") window.gtag("event", event, params || {}); // straight to GA4
   }
   document.addEventListener("click", function (e) {
     var a = e.target.closest && e.target.closest('a[href^="tel:"]');
