@@ -6,6 +6,18 @@
   if (location.pathname === "/" && OLD[location.hash]) location.replace(OLD[location.hash]);
   if (location.pathname === "/" && /^#service-/.test(location.hash)) location.replace("/services/" + location.hash.slice(9) + "/");
 
+  // ---------- Analytics events (read by Google Tag Manager) ----------
+  window.dataLayer = window.dataLayer || [];
+  function track(event, params) {
+    var data = { event: event };
+    for (var k in params) if (Object.prototype.hasOwnProperty.call(params, k)) data[k] = params[k];
+    window.dataLayer.push(data);
+  }
+  document.addEventListener("click", function (e) {
+    var a = e.target.closest && e.target.closest('a[href^="tel:"]');
+    if (a) track("phone_click", { link_url: a.getAttribute("href") });
+  });
+
   // ---------- Mobile menu ----------
   var toggle = document.getElementById("menu-toggle");
   var menu = document.getElementById("mobile-menu");
@@ -74,7 +86,7 @@
       root.hidden = false;
       document.documentElement.classList.add("wa-lock");
       setTimeout(function () { (waForm.elements.name.value ? sel : waForm.elements.name).focus(); }, 30);
-      if (typeof window.gtag === "function") window.gtag("event", "whatsapp_form_open");
+      track("whatsapp_popup_open", {});
     }
     function close() {
       root.hidden = true;
@@ -140,7 +152,7 @@
         "*Page:* " + location.href.split("#")[0],
       ].join("\n");
       var url = "https://wa.me/" + WA_NUMBER + "?text=" + encodeURIComponent(text);
-      if (typeof window.gtag === "function") window.gtag("event", "generate_lead", { service: vals.service, method: "WhatsApp pop-up" });
+      track("generate_lead", { lead_method: "WhatsApp pop-up", lead_service: vals.service, business_type: vals.business, budget: vals.budget });
       if (typeof window.fbq === "function") window.fbq("track", "Lead", { content_name: vals.service });
       var win = window.open(url, "_blank"); // runs inside the click, so it isn't blocked
       close();
@@ -266,11 +278,11 @@
 
     channelInput.value = channel;
     var fd = new FormData(form);
-    if (typeof window.gtag === "function") window.gtag("event", "generate_lead", { service: fd.get("service"), method: channel });
     if (typeof window.fbq === "function") window.fbq("track", "Lead", { content_name: fd.get("service") });
 
     // ---- Option 1: WhatsApp — opens a chat with the details pre-filled ----
     if (channel === "WhatsApp") {
+      track("generate_lead", { lead_method: "Contact form - WhatsApp", lead_service: fd.get("service") });
       var waLink = "https://wa.me/" + WHATSAPP_NUMBER + "?text=" + encodeURIComponent(whatsappText(fd));
       var win = window.open(waLink, "_blank"); // must run immediately on click so it isn't blocked
       showSuccess("WhatsApp", waLink);
@@ -281,6 +293,7 @@
     // ---- Option 2: Email — delivered to the Gmail inbox ----
     setBusy(true, "Email");
     sendToEmail(fd).then(function () {
+      track("generate_lead", { lead_method: "Contact form - Email", lead_service: fd.get("service") });
       showSuccess("Email");
     }).catch(function () {
       showError('Sorry, your message could not be sent by email. Please try <strong>Send on WhatsApp</strong>, or email us at <a class="underline" href="mailto:' + LEADS_EMAIL + '">' + LEADS_EMAIL + "</a>.");
