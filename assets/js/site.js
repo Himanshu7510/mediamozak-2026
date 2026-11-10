@@ -27,12 +27,17 @@
   }
 
   // ---------- AI chat assistant ----------
-  (function () {
-    var s = document.createElement("script");
-    s.src = "/assets/js/chat.js?v=1";
-    s.defer = true;
-    document.body.appendChild(s);
-  })();
+  // Only shown once the chatbot is configured (ANTHROPIC_API_KEY set on Vercel).
+  fetch("/api/health/", { cache: "no-store" })
+    .then(function (r) { return r.json(); })
+    .then(function (h) {
+      if (!h.chatbot) return;
+      var s = document.createElement("script");
+      s.src = "/assets/js/chat.js?v=1";
+      s.defer = true;
+      document.body.appendChild(s);
+    })
+    .catch(function () {});
 
   document.addEventListener("click", function (e) {
     if (!e.target.closest) return;
