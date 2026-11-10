@@ -1,7 +1,7 @@
 // POST /api/chat — the Mediamozak AI assistant.
 // Body: { messages: [{ role: "user"|"assistant", content: string }], page: string }
 // Reply: { reply: string, leadSaved: boolean }
-const { allowedOrigin, rateLimited, readBody, saveLead, clip } = require("./_lib/leads");
+const { allowedOrigin, rateLimited, readBody, saveLead, clip, tagAdLead } = require("./_lib/leads");
 
 const MODEL = process.env.CHAT_MODEL || "claude-haiku-5-5";
 const MAX_TURNS = 40;
@@ -132,6 +132,7 @@ module.exports = async (req, res) => {
             services: i.services, budget: i.budget, callTime: i.call_time, callDate: i.call_date, language: i.language,
             summary: i.summary, transcript: transcript(raw), page,
           });
+          await tagAdLead(id, b.attribution);
           leadSaved = true;
           content = "Saved. Lead id " + id + ". Confirm the callback to the visitor.";
         } catch (e) {

@@ -1,6 +1,6 @@
 // POST /api/lead — called by the contact form and the WhatsApp pop-up so every
 // website enquiry is also saved to the leads sheet (and from there, the CRM).
-const { allowedOrigin, rateLimited, readBody, saveLead, clip } = require("./_lib/leads");
+const { allowedOrigin, rateLimited, readBody, saveLead, clip, tagAdLead } = require("./_lib/leads");
 
 module.exports = async (req, res) => {
   if (req.method !== "POST") return res.status(405).json({ ok: false });
@@ -24,6 +24,7 @@ module.exports = async (req, res) => {
       summary: b.message,
       page: b.page,
     });
+    await tagAdLead(id, b.attribution);
     return res.status(200).json({ ok: true, id });
   } catch (e) {
     console.error(e);

@@ -82,4 +82,36 @@ async function saveLead(lead) {
   return j.id;
 }
 
-module.exports = { allowedOrigin, rateLimited, readBody, saveLead, store, clip };
+// Decide the marketing channel from the visitor's landing-page tags.
+function adChannel(a) {
+  if (!a || typeof a !== "object") return null;
+  const src = String(a.utm_source || "").toLowerCase(), med = String(a.utm_medium || "").toLowerCase();
+  const paid = /cpc|ppc|paid|ads?\b|display|video|cpm|sem/.test(med);
+  if (a.gclid || (/google|youtube|adwords/.test(src) && paid)) return "Google ads";
+  if (/facebook|^fb$|instagram|^ig$|meta|whatsapp/.test(src) && (paid || /paid_social|social_paid/.test(med))) return "Meta ads";
+  if (med === "paid_social") return "Meta ads";
+  return null;
+}
+
+function describeAttribution(a) {
+  if (!a || typeof a !== "object") return "";
+  const parts = [];
+  if (a.gclid) parts.push("Google Ads click");
+  if (a.fbclid) parts.push("Facebook/Instagram click");
+  if (a.utm_source) parts.push("utm_source=" + clip(a.utm_source, 60));
+  if (a.utm_medium) parts.push("utm_medium=" + clip(a.utm_medium, 60));
+  if (a.utm_campaign) parts.push("campaign=" + clip(a.utm_campaign, 100));
+  if (a.referrer) parts.push("referrer " + clip(a.referrer, 200));
+  if (a.landing) parts.push("landed on " + clip(a.landing, 200));
+  return parts.length ? "Visitor came from: " + parts.join(", ") : "";
+}
+
+// After a website lead is saved, relabel it as an ad lead when the tags say so.
+async function tagAdLead(id, attribution) {
+  const channel = adChannel(attribution);
+  const note = describeAttribution(attribution);
+  if (!id || (!channel && !note)) return;
+  await store("patch", { id, patch: channel ? { source: channel } : {}, note: note || "", by: "Website" }).catch((e) => console.error(e));
+}
+
+module.exports = { allowedOrigin, rateLimited, readBody, saveLead, store, clip, tagAdLead, adChannel };

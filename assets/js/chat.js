@@ -155,7 +155,7 @@
     fetch("/api/chat/", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ messages: state.messages, page: location.href.split("#")[0] }),
+      body: JSON.stringify({ messages: state.messages, page: location.href.split("#")[0], attribution: window.__mmAttribution ? window.__mmAttribution() : null }),
     })
       .then(function (r) { return r.json().catch(function () { return {}; }).then(function (j) { return { ok: r.ok, j: j }; }); })
       .then(function (res) {

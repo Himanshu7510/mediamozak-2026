@@ -14,12 +14,42 @@
     window.dataLayer.push(data);
     if (typeof window.gtag === "function") window.gtag("event", event, params || {}); // straight to GA4
   }
+  // ---------- Where did this visitor come from? ----------
+  // Remembers the ad click / campaign tags from the landing URL for 30 days so the
+  // CRM can label the lead "Google ads" or "Meta ads" even if they enquire later.
+  var ATTR_KEY = "mm_attr";
+  function readAttr() {
+    try { var a = JSON.parse(localStorage.getItem(ATTR_KEY) || "null"); if (a && Date.now() - a.ts < 30 * 864e5) return a; } catch (e) {}
+    return null;
+  }
+  (function () {
+    try {
+      var q = new URLSearchParams(location.search);
+      var a = {
+        gclid: !!(q.get("gclid") || q.get("gbraid") || q.get("wbraid")),
+        fbclid: !!q.get("fbclid"),
+        utm_source: (q.get("utm_source") || "").slice(0, 60),
+        utm_medium: (q.get("utm_medium") || "").slice(0, 60),
+        utm_campaign: (q.get("utm_campaign") || "").slice(0, 100),
+        referrer: document.referrer && document.referrer.indexOf(location.host) < 0 ? document.referrer.slice(0, 200) : "",
+        landing: location.pathname.slice(0, 200),
+        ts: Date.now()
+      };
+      var tagged = a.gclid || a.fbclid || a.utm_source || a.utm_medium;
+      var prev = readAttr();
+      // A new tagged visit (e.g. another ad click) replaces the old one; untagged visits keep it.
+      if (tagged || (!prev && a.referrer)) localStorage.setItem(ATTR_KEY, JSON.stringify(a));
+    } catch (e) {}
+  })();
+  window.__mmAttribution = readAttr;
+
   // ---------- Website leads → leads sheet → CRM ----------
   // Fire-and-forget copy of every enquiry to /api/lead. sendBeacon survives
   // the page opening WhatsApp or navigating away.
   function sendLead(data) {
     try {
       data.page = location.href.split("#")[0];
+      data.attribution = readAttr();
       var body = JSON.stringify(data);
       if (navigator.sendBeacon && navigator.sendBeacon("/api/lead/", new Blob([body], { type: "text/plain" }))) return;
       fetch("/api/lead/", { method: "POST", headers: { "Content-Type": "text/plain" }, body: body, keepalive: true }).catch(function () {});
@@ -33,7 +63,7 @@
     .then(function (h) {
       if (!h.chatbot) return;
       var s = document.createElement("script");
-      s.src = "/assets/js/chat.js?v=1";
+      s.src = "/assets/js/chat.js?v=2";
       s.defer = true;
       document.body.appendChild(s);
     })
