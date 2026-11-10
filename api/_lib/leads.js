@@ -61,8 +61,13 @@ async function saveLead(lead) {
     body: JSON.stringify({ secret, lead: clean }),
     redirect: "follow",
   });
-  const j = await r.json().catch(() => ({}));
-  if (!r.ok || !j.ok) throw new Error("Lead inbox rejected the lead: " + (j.error || r.status));
+  const text = await r.text();
+  let j = {};
+  try { j = JSON.parse(text); } catch (e) {}
+  if (!r.ok || !j.ok) {
+    const hint = (text.match(/<title>([^<]*)<\/title>/i) || [])[1] || text.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 160);
+    throw new Error("Lead inbox rejected the lead (" + r.status + "): " + (j.error || hint));
+  }
   return j.id;
 }
 
