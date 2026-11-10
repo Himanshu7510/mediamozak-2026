@@ -106,12 +106,44 @@ function describeAttribution(a) {
   return parts.length ? "Visitor came from: " + parts.join(", ") : "";
 }
 
-// After a website lead is saved, relabel it as an ad lead when the tags say so.
-async function tagAdLead(id, attribution) {
-  const channel = adChannel(attribution);
-  const note = describeAttribution(attribution);
-  if (!id || (!channel && !note)) return;
-  await store("patch", { id, patch: channel ? { source: channel } : {}, note: note || "", by: "Website" }).catch((e) => console.error(e));
+// Map what the visitor picked or said onto the CRM's service list
+// (grouped like mediamozak.com/services).
+const SERVICE_RULES = [
+  [/web ?dev|website|web site|site banwa|वेबसाइट/i, "New website"], [/redesign|revamp/i, "Website redesign"],
+  [/landing/i, "Landing page"], [/web ?app|portal|dashboard|software/i, "Web app / portal"], [/cms|wordpress/i, "Custom CMS"],
+  [/maintenance|hosting|support/i, "Website maintenance"],
+  [/\bseo\b|search engine|rank|organic/i, "SEO"], [/local seo|gmb|google business|google maps|map listing/i, "Local SEO / GMB"],
+  [/technical seo|core web vitals|page speed/i, "Technical SEO & Core Web Vitals"], [/backlink|link building/i, "Link building"], [/blog|content writing|article/i, "SEO content & blogs"],
+  [/social media|instagram page|facebook page|smm/i, "Social media"], [/reel|short video|shorts/i, "Reels & short videos"],
+  [/influencer/i, "Influencer collaborations"], [/community/i, "Community management"],
+  [/performance marketing|google ads?|adwords|ppc|search ads/i, "Google ads"], [/performance marketing|meta ads?|facebook ads?|instagram ads?/i, "Meta ads"],
+  [/youtube ads?/i, "YouTube ads"], [/pixel|conversion api|capi/i, "Pixel & Conversion API setup"],
+  [/e-?com marketing|shopify|woocommerce|online store sales/i, "Shopify / WooCommerce store CRO"], [/catalog|remarketing|retarget/i, "Catalog & remarketing ads"],
+  [/abandon/i, "Abandoned-cart automation"], [/whatsapp marketing|email marketing|sms marketing|retention/i, "WhatsApp / email marketing"],
+  [/e-?commerce (site|website|store)|online store/i, "E-commerce store"],
+  [/quick-?com|blinkit|zepto|instamart|swiggy/i, "Blinkit / Zepto / Instamart listings"],
+  [/lead gen|more leads|leads chahiye|enquir(y|ies)|lead generation/i, "Lead generation campaign"], [/quiz/i, "Quiz funnels"],
+  [/\bcrm\b/i, "CRM integration & sync"], [/nurtur|drip/i, "Lead nurturing automation"], [/linkedin/i, "B2B LinkedIn outreach"],
+];
+function mapServices(text) {
+  const out = [];
+  for (const [re, label] of SERVICE_RULES) if (re.test(String(text || "")) && !out.includes(label)) out.push(label);
+  return out;
 }
 
-module.exports = { allowedOrigin, rateLimited, readBody, saveLead, store, clip, tagAdLead, adChannel };
+// After a website lead is saved: set the services from the website's own names,
+// and relabel it as an ad lead when the landing tags say so.
+async function finalizeLead(id, { attribution, servicesText } = {}) {
+  if (!id) return;
+  const channel = adChannel(attribution);
+  const note = describeAttribution(attribution);
+  const services = mapServices(servicesText);
+  const patch = {};
+  if (channel) patch.source = channel;
+  if (services.length) patch.services = services;
+  if (!Object.keys(patch).length && !note) return;
+  await store("patch", { id, patch, note: note || "", by: "Website" }).catch((e) => console.error(e));
+}
+const tagAdLead = (id, attribution) => finalizeLead(id, { attribution });
+
+module.exports = { allowedOrigin, rateLimited, readBody, saveLead, store, clip, tagAdLead, finalizeLead, mapServices, adChannel };

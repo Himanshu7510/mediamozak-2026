@@ -11,10 +11,20 @@
     { id: "won", name: "Won", hint: "Signed / advance received" },
     { id: "lost", name: "Lost", hint: "Not now or went elsewhere" },
   ];
-  var SERVICES = {
-    dm: ["SEO", "Local SEO / GMB", "Social media", "Meta ads", "Google ads", "Content & video", "WhatsApp / email marketing", "Lead generation campaign"],
-    wd: ["New website", "Website redesign", "Landing page", "E-commerce store", "Web app / portal", "Website maintenance"],
-  };
+  // Grouped exactly like mediamozak.com/services. "wd" = web development line, everything else = digital marketing.
+  var SERVICE_GROUPS = [
+    { id: "web", line: "wd", name: "Web Development", items: ["New website", "Website redesign", "Landing page", "E-commerce store", "Web app / portal", "Custom CMS", "Website maintenance"] },
+    { id: "seo", line: "dm", name: "SEO", items: ["SEO", "Technical SEO & Core Web Vitals", "Local SEO / GMB", "Link building", "SEO content & blogs"] },
+    { id: "social", line: "dm", name: "Social Media Marketing", items: ["Social media", "Reels & short videos", "Content & video", "Community management", "Influencer collaborations"] },
+    { id: "perf", line: "dm", name: "Performance Marketing", items: ["Google ads", "Meta ads", "YouTube ads", "Pixel & Conversion API setup", "Ad creative A/B testing"] },
+    { id: "ecom", line: "dm", name: "E-com Marketing", items: ["Shopify / WooCommerce store CRO", "Catalog & remarketing ads", "Abandoned-cart automation", "WhatsApp / email marketing"] },
+    { id: "qcom", line: "dm", name: "Quick-com Marketing", items: ["Blinkit / Zepto / Instamart listings", "Quick-com in-app ads", "Hyper-local targeting"] },
+    { id: "leadgen", line: "dm", name: "Lead Generation", items: ["Lead generation campaign", "Quiz funnels", "CRM integration & sync", "Lead nurturing automation", "B2B LinkedIn outreach"] },
+  ];
+  var SERVICES = { dm: [], wd: [] };
+  var GROUP_OF = {};
+  SERVICE_GROUPS.forEach(function (g) { g.items.forEach(function (x) { SERVICES[g.line].push(x); GROUP_OF[x] = g; }); });
+  var groupsOf = function (l) { var out = []; (l.services || []).forEach(function (x) { var g = GROUP_OF[x]; if (g && out.indexOf(g) < 0) out.push(g); }); return out; };
   var SOURCES = ["Website form", "AI chatbot", "Meta ads", "Google ads", "IndiaMART", "JustDial", "Referral", "Cold call / email", "Instagram / WhatsApp", "LinkedIn", "Walk-in / event", "Prospect research", "Other"];
   var NICHES = ["Restaurant & cafe", "Real estate & builder", "School & coaching", "Clinic & hospital", "Salon, spa & fitness", "Retail & D2C", "Hotel & travel", "Manufacturing / B2B", "Other"];
   var PRI = { hot: "Hot", warm: "Warm", cold: "Cold" };
@@ -31,7 +41,7 @@
   var stageName = function (id) { var s = STAGES.filter(function (x) { return x.id === id; })[0]; return s ? s.name : id; };
 
   var me = null, leads = [], users = [], wa = null, loaded = false;
-  var state = { view: "board", q: "", line: "all", source: "", niche: "", owner: "", openId: null, confirmDel: false, draft: null };
+  var state = { view: "board", q: "", line: "all", service: "", source: "", niche: "", owner: "", openId: null, confirmDel: false, draft: null };
   try { var v = localStorage.getItem("mm.crm.view"); if (v) state.view = v; } catch (e) {}
 
   // ---------- API ----------
@@ -103,6 +113,7 @@
       '<main class="wrap"><section class="stats" id="stats" aria-label="Summary"></section><div id="notice" class="notice" hidden></div>' +
       '<div class="toolbar" id="toolbar"><input type="search" id="q" placeholder="Search business, city, contact, phone…" aria-label="Search leads">' +
       '<div class="seg" role="group" aria-label="Service line"><button type="button" data-line="all" aria-pressed="true">All</button><button type="button" data-line="dm" aria-pressed="false">Digital marketing</button><button type="button" data-line="wd" aria-pressed="false">Web dev</button></div>' +
+      '<select id="fService" aria-label="Filter by service"><option value="">All services</option>' + SERVICE_GROUPS.map(function (g) { return '<option value="' + g.id + '">' + esc(g.name) + "</option>"; }).join("") + "</select>" +
       '<select id="fSource" aria-label="Filter by source"><option value="">All sources</option>' + SOURCES.map(function (s) { return "<option>" + esc(s) + "</option>"; }).join("") + "</select>" +
       '<select id="fNiche" aria-label="Filter by industry"><option value="">All industries</option>' + NICHES.map(function (s) { return "<option>" + esc(s) + "</option>"; }).join("") + "</select>" +
       '<select id="fOwner" aria-label="Filter by owner"><option value="">Everyone</option><option value="__me">Mine</option><option value="__none">Unassigned</option></select></div>' +
@@ -110,6 +121,7 @@
 
     $("#q").oninput = function (e) { state.q = e.target.value.toLowerCase(); render(); };
     $("#fSource").onchange = function (e) { state.source = e.target.value; render(); };
+    $("#fService").onchange = function (e) { state.service = e.target.value; render(); };
     $("#fNiche").onchange = function (e) { state.niche = e.target.value; render(); };
     $("#fOwner").onchange = function (e) { state.owner = e.target.value; render(); };
     document.querySelectorAll("[data-line]").forEach(function (b) {
@@ -157,6 +169,7 @@
     return leads.filter(function (l) {
       if (state.line !== "all" && !lineOf(l)[state.line]) return false;
       if (state.source && l.source !== state.source) return false;
+      if (state.service && !groupsOf(l).some(function (g) { return g.id === state.service; })) return false;
       if (state.niche && l.niche !== state.niche) return false;
       if (state.owner === "__me" && l.assignedTo !== me.email) return false;
       if (state.owner === "__none" && l.assignedTo) return false;
@@ -172,9 +185,8 @@
   function dueText(d) { var c = dueClass(d); return c === "over" ? "Overdue · " + fmtDate(d) : c === "today" ? "Follow up today" : "Next: " + fmtDate(d); }
 
   function chipsFor(l) {
-    var ln = lineOf(l), h = "";
-    if (ln.dm) h += '<span class="chip dm">Digital marketing</span>';
-    if (ln.wd) h += '<span class="chip wd">Web dev</span>';
+    var h = "";
+    groupsOf(l).forEach(function (g) { h += '<span class="chip ' + g.line + '">' + esc(g.name) + "</span>"; });
     if (l.priority) h += '<span class="chip ' + esc(l.priority) + '">' + esc(PRI[l.priority] || "") + "</span>";
     if (l.source) h += '<span class="chip ' + (l.source === "AI chatbot" ? "ai" : "src") + '">' + esc(l.source) + "</span>";
     return '<div class="chips">' + h + "</div>";
@@ -258,7 +270,8 @@
       '<div class="panel"><h3>Leads by source</h3><div class="bars">' + barRows(by("source")) + "</div></div>" +
       '<div class="panel"><h3>Revenue won by source</h3><div class="bars">' + (barRows(wonRows, "good") || '<div class="col-hint">Win your first deal to see which source pays best.</div>') + "</div></div>" +
       '<div class="panel"><h3>Pipeline by stage</h3><div class="bars">' + barRows(STAGES.map(function (s) { return [s.name, leads.filter(function (l) { return l.stage === s.id; }).length]; })) + "</div></div>" +
-      '<div class="panel"><h3>Open pipeline by service line</h3><div class="bars">' + barRows([["Digital marketing", dmV, inrShort(dmV)], ["Web development", wdV, inrShort(wdV)]]) + '</div><h3 style="margin-top:18px">Most requested services</h3><div class="bars">' + barRows(Object.keys(svc).map(function (k) { return [k, svc[k]]; }).sort(function (a, b) { return b[1] - a[1]; }).slice(0, 8), "dm") + "</div></div>" +
+      '<div class="panel"><h3>Leads by service</h3><div class="bars">' + barRows(SERVICE_GROUPS.map(function (g) { return [g.name, leads.filter(function (l) { return groupsOf(l).indexOf(g) >= 0; }).length]; }).sort(function (a, b) { return b[1] - a[1]; }), "wd") + '</div></div>' +
+      '<div class="panel"><h3>Open pipeline by service line</h3><div class="bars">' + barRows([["Digital marketing", dmV, inrShort(dmV)], ["Web development", wdV, inrShort(wdV)]]) + '</div><h3 style="margin-top:18px">Most requested deliverables</h3><div class="bars">' + barRows(Object.keys(svc).map(function (k) { return [k, svc[k]]; }).sort(function (a, b) { return b[1] - a[1]; }).slice(0, 8), "dm") + "</div></div>" +
       '<div class="panel"><h3>Open leads by owner</h3><div class="bars">' + barRows(by("assignedTo", isOpen), "wd") + "</div></div>" +
       '<div class="panel"><h3>Leads by city</h3><div class="bars">' + barRows(by("city").slice(0, 10)) + "</div></div></div>";
   }
@@ -314,7 +327,8 @@
     if (state.openId === null || !state.draft) return;
     var isNew = !state.openId, live = isNew ? null : byId(state.openId), d = state.draft;
     if (!isNew && !live) { closeSheet(); return; }
-    var svcGrp = function (k, label) { return '<div class="grp"><span>' + label + "</span>" + SERVICES[k].map(function (s, i) { return '<label><input type="checkbox" id="svc-' + k + "-" + i + '" value="' + esc(s) + '"' + (d.services.indexOf(s) >= 0 ? " checked" : "") + "> " + esc(s) + "</label>"; }).join("") + "</div>"; };
+    var svcGrp = function (g) { return '<div class="grp"><span>' + esc(g.name) + "</span>" + g.items.map(function (x, i) { return '<label><input type="checkbox" id="svc-' + g.id + "-" + i + '" value="' + esc(x) + '"' + (d.services.indexOf(x) >= 0 ? " checked" : "") + "> " + esc(x) + "</label>"; }).join("") + "</div>"; };
+    var legacy = d.services.filter(function (x) { return !GROUP_OF[x]; });
     var userOpts = [["", "Unassigned"]].concat(users.filter(function (u) { return u.active; }).map(function (u) { return [u.email, u.name || u.email]; }));
     var log = live ? (live.log || []).slice().reverse() : [];
     var phone = live && live.phone && /\d{6,}/.test(live.phone) ? live.phone : "";
@@ -345,7 +359,7 @@
       '<label class="f"><span>Next follow-up</span><input type="date" id="l-followUp" value="' + esc(d.followUp || "") + '"></label>' +
       '<label class="f"><span>Owner</span><select id="l-assignedTo">' + opts(userOpts, d.assignedTo || "") + "</select></label></div>" +
       '<div class="actions" aria-label="Quick follow-up dates">' + [["Tomorrow", 1], ["In 3 days", 3], ["Next week", 7], ["In 2 weeks", 14]].map(function (x) { return '<button class="btn sm" type="button" data-days="' + x[1] + '">' + x[0] + "</button>"; }).join("") + '<button class="btn sm" type="button" data-days="">Clear date</button></div>' +
-      '<div class="f"><span>Services they need</span><div class="svc">' + svcGrp("dm", "Digital marketing") + svcGrp("wd", "Web development") + "</div></div>" +
+      '<div class="f"><span>Services they need</span><div class="svc">' + SERVICE_GROUPS.map(function (g) { return svcGrp(g); }).join("") + (legacy.length ? svcGrp({ id: "other", name: "Other", items: legacy }) : "") + "</div></div>" +
       '<label class="f"><span>Requirement / notes</span><textarea id="l-notes">' + esc(d.notes) + "</textarea></label>" +
       (!isNew && live.transcript ? '<details class="box"><summary>AI chat transcript</summary><div class="transcript">' + esc(live.transcript) + "</div></details>" : "") +
       (!isNew ? '<div class="f"><span>Activity</span><div class="log-add"><input type="text" id="logText" placeholder="Called, sent quote on WhatsApp, asked to call back…" aria-label="New activity note"><button class="btn sm" type="button" id="logAdd">Add</button></div>' +
