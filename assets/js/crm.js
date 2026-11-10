@@ -421,6 +421,7 @@
       '<section><h3>Your password</h3><div class="grid2"><label class="f"><span>Current password</span><input type="password" id="pw-cur" autocomplete="current-password"></label><label class="f"><span>New password (8+)</span><input type="password" id="pw-new" autocomplete="new-password"></label></div><div><button class="btn sm" type="button" id="pwSave">Change password</button></div></section>' +
       '<section><h3>Team</h3>' + teamHtml +
       (owner ? '<div class="grid2"><label class="f"><span>Name</span><input type="text" id="t-name"></label><label class="f"><span>Email</span><input type="email" id="t-email"></label><label class="f"><span>Temporary password (8+)</span><input type="text" id="t-pw" autocomplete="off"></label><label class="f"><span>Role</span><select id="t-role"><option value="member">Team member</option><option value="owner">Owner (can manage team &amp; delete)</option></select></label></div><div><button class="btn sm primary" type="button" id="tAdd">Add team member</button></div><p class="help">Share the sign-in link <strong>mediamozak.com/crm</strong> and the temporary password with them; they can change it here after signing in.</p>' : '<p class="help">Only the owner can add or remove team members.</p>') + "</section>" +
+      (owner ? '<section id="intBox"><h3>Integrations &amp; API keys</h3><p class="help">Loading…</p></section>' : "") +
       '<section><h3>WhatsApp Business ' + (w.configured ? '<span class="ok-pill">Connected</span>' : '<span class="off-pill">Not set up</span>') + "</h3>" +
       (owner ? '<p class="help">Uses Meta\'s WhatsApp Cloud API. Alerts and replies are sent as approved templates. Alert template variables: {{1}} name, {{2}} phone, {{3}} service, {{4}} source. Reply template variables: {{1}} lead first name, {{2}} your name.</p>' +
         '<div class="grid2"><label class="f"><span>Phone number ID</span><input type="text" id="w-phoneId" value="' + esc(w.phoneId || "") + '"></label>' +
@@ -437,6 +438,7 @@
       api("password", { currentPassword: $("#pw-cur").value, newPassword: $("#pw-new").value }).then(function () { toast("Password changed"); $("#pw-cur").value = $("#pw-new").value = ""; }).catch(function (e) { toast(e.message); });
     };
     if (!owner) return;
+    renderIntegrations();
     var refreshTeam = function (msg) { toast(msg); load().then(openSettings); };
     $("#tAdd").onclick = function () {
       api("saveUser", { name: $("#t-name").value, email: $("#t-email").value, password: $("#t-pw").value, role: $("#t-role").value, active: true }).then(function () { refreshTeam("Team member added"); }).catch(function (e) { toast(e.message); });
@@ -465,6 +467,65 @@
       api("waConfig", { config: { phoneId: $("#w-phoneId").value, token: $("#w-token").value, alertTo: $("#w-alertTo").value, alertTemplate: $("#w-alertTemplate").value, replyTemplate: $("#w-replyTemplate").value, alertLang: lang, replyLang: lang } })
         .then(function (s) { wa = s; toast("WhatsApp settings saved"); openSettings(); }).catch(function (e) { toast(e.message); });
     };
+  }
+
+  function renderIntegrations() {
+    var box = $("#intBox"); if (!box) return;
+    api("integrations").then(function (it) {
+      var pill = function (on, txt) { return on ? '<span class="ok-pill">' + (txt || "Connected") + "</span>" : '<span class="off-pill">Not set</span>'; };
+      var sample = JSON.stringify({ name: "Rohit Sharma", phone: "9876543210", email: "rohit@example.com", business: "Sharma Dental", city: "Delhi", service: "Search Engine Optimization (SEO)", message: "Need more patients from Google", source: "Meta ads" }, null, 2);
+      box.innerHTML = "<h3>Integrations &amp; API keys</h3>" +
+        // AI chatbot key
+        '<div class="panel" style="padding:12px"><div class="actions"><strong style="margin-right:auto">AI chatbot (Anthropic API key)</strong>' + pill(it.anthropic.set, it.anthropic.fromVercel ? "Set on Vercel" : "Connected") + "</div>" +
+        '<p class="help">Powers the chat assistant on mediamozak.com. Create a key at console.anthropic.com → API Keys. The chat button appears on the website within ~5 minutes of saving.</p>' +
+        (it.anthropic.fromVercel ? '<p class="help">This key is set in Vercel and takes priority. Change it there.</p>' :
+          '<div class="actions"><input type="password" id="k-anthropic" placeholder="sk-ant-…" autocomplete="off" style="flex:1;min-width:200px"><button class="btn sm primary" type="button" data-savekey="anthropic">Save</button>' + (it.anthropic.set ? '<button class="btn sm danger" type="button" data-clearkey="anthropic">Remove</button>' : "") + "</div>") + "</div>" +
+        // IndiaMART
+        '<div class="panel" style="padding:12px"><div class="actions"><strong style="margin-right:auto">IndiaMART auto-import</strong>' + pill(it.indiamart.set) + "</div>" +
+        '<p class="help">Pulls your IndiaMART enquiries into the CRM every 10 minutes (source: IndiaMART). Get the key at seller.indiamart.com → Lead Manager → ⋮ → Import/Export Leads → Pull API → Generate Key (paid sellers).</p>' +
+        (it.indiamart.last ? '<p class="help">Last sync: ' + esc(it.indiamart.last) + "</p>" : "") +
+        (it.indiamart.error ? '<p class="err" style="font-size:13px">' + esc(it.indiamart.error) + "</p>" : "") +
+        '<div class="actions"><input type="password" id="k-indiamart" placeholder="IndiaMART CRM key" autocomplete="off" style="flex:1;min-width:200px"><button class="btn sm primary" type="button" data-savekey="indiamart">Save</button>' +
+        (it.indiamart.set ? '<button class="btn sm" type="button" id="imSync">Sync now</button><button class="btn sm danger" type="button" data-clearkey="indiamart">Remove</button>' : "") + "</div></div>" +
+        // Lead API
+        '<div class="panel" style="padding:12px"><strong>Lead API (for Zapier, Meta Lead Ads, JustDial, other websites)</strong>' +
+        '<p class="help">Send a POST request with JSON or form fields. Leads appear in the CRM instantly and trigger the usual email alert.</p>' +
+        '<label class="f"><span>Endpoint</span><div class="actions"><code class="num" style="background:var(--raised);padding:6px 8px;border-radius:6px;user-select:all;overflow-wrap:anywhere;flex:1">' + esc(it.leadApi.url) + '</code><button class="btn sm" type="button" data-copy="' + esc(it.leadApi.url) + '">Copy</button></div></label>' +
+        '<label class="f"><span>API key (send as header X-API-Key, or ?key=)</span><div class="actions"><code class="num" id="apiKeyTxt" style="background:var(--raised);padding:6px 8px;border-radius:6px;user-select:all;overflow-wrap:anywhere;flex:1">' + esc(it.leadApi.key) + '</code><button class="btn sm" type="button" data-copy="' + esc(it.leadApi.key) + '">Copy</button><button class="btn sm danger" type="button" id="regenKey">Regenerate</button></div></label>' +
+        '<details class="box"><summary>Fields &amp; example</summary><p class="help">Accepted fields: <code>name</code>, <code>phone</code>, <code>email</code>, <code>business</code>, <code>city</code>, <code>service</code> (one of the 7 website services), <code>message</code>, <code>budget</code>, <code>source</code> (e.g. Meta ads, Google ads, JustDial, Referral), <code>id</code> (your system\'s lead id, prevents duplicates). Meta Lead Ads <code>field_data</code> is understood too.</p><pre class="transcript" style="color:var(--ink)">' + esc(sample) + "</pre></details></div>";
+
+      box.querySelectorAll("[data-savekey]").forEach(function (b) {
+        b.onclick = function () {
+          var v = $("#k-" + b.dataset.savekey).value.trim(); if (!v) { toast("Paste the key first"); return; }
+          b.disabled = true;
+          api("setKey", { name: b.dataset.savekey, value: v }).then(function () { toast("Key saved"); renderIntegrations(); }).catch(function (e) { toast(e.message); b.disabled = false; });
+        };
+      });
+      box.querySelectorAll("[data-clearkey]").forEach(function (b) {
+        b.onclick = function () {
+          if (!b.dataset.confirm) { b.dataset.confirm = "1"; b.textContent = "Confirm remove"; return; }
+          api("setKey", { name: b.dataset.clearkey, value: "" }).then(function () { toast("Key removed"); renderIntegrations(); }).catch(function (e) { toast(e.message); });
+        };
+      });
+      box.querySelectorAll("[data-copy]").forEach(function (b) {
+        b.onclick = function () {
+          var t = b.dataset.copy;
+          if (navigator.clipboard) navigator.clipboard.writeText(t).then(function () { toast("Copied"); }, function () { toast("Select the text and copy it"); });
+          else toast("Select the text and copy it");
+        };
+      });
+      var rg = $("#regenKey");
+      if (rg) rg.onclick = function () {
+        if (!rg.dataset.confirm) { rg.dataset.confirm = "1"; rg.textContent = "Confirm: old key stops working"; return; }
+        api("regenApiKey", {}).then(function () { toast("New API key created"); renderIntegrations(); }).catch(function (e) { toast(e.message); });
+      };
+      var sy = $("#imSync");
+      if (sy) sy.onclick = function () {
+        sy.disabled = true; sy.textContent = "Syncing…";
+        api("imSync", {}).then(function (j) { toast(j.added ? j.added + " new IndiaMART lead(s) added" : "No new IndiaMART leads"); load(); renderIntegrations(); })
+          .catch(function (e) { toast(e.message); sy.disabled = false; sy.textContent = "Sync now"; });
+      };
+    }).catch(function (e) { box.innerHTML = "<h3>Integrations &amp; API keys</h3><p class=\"err\">" + esc(e.message) + "</p>"; });
   }
 
   function exportCsv() {

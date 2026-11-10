@@ -1,6 +1,7 @@
 // /api/crm/?a=<action> — the private CRM at mediamozak.com/crm.
 const { allowedOrigin, rateLimited, readBody, store, clip } = require("./_lib/leads");
 const { hashPassword, verifyPassword, getSession, setSession, clearSession, safeEqual } = require("./_lib/auth");
+const { getConfig, clearCache, leadApiKey } = require("./_lib/config");
 
 const STAGES = ["prospect", "new", "contacted", "qualified", "proposal", "won", "lost"];
 const FIELDS = ["stage", "priority", "name", "contact", "phone", "email", "website", "city", "niche", "services", "source", "value", "followUp", "assignedTo", "notes", "budget", "callTime", "language", "ref"];
@@ -73,7 +74,7 @@ module.exports = async (req, res) => {
       const [{ leads }, { users }] = await Promise.all([store("list"), store("users")]);
       return res.status(200).json({ leads, users: users.map(publicUser) });
     }
-    if (req.method !== "POST") return res.status(405).json({ error: "POST only" });
+    if (req.method !== "POST" && a !== "waStatus" && a !== "integrations") return res.status(405).json({ error: "POST only" });
 
     if (a === "create") {
       const lead = cleanLead(b.lead || {});
@@ -117,6 +118,39 @@ module.exports = async (req, res) => {
       if (email === s.email) return res.status(400).json({ error: "You can't remove yourself." });
       await store("deleteUser", { email });
       return res.status(200).json({ ok: true });
+    }
+    if (a === "integrations") {
+      if (!owner) return res.status(403).json({ error: "Only the account owner can see integrations." });
+      const cfg = await getConfig(true);
+      const host = req.headers["x-forwarded-host"] || req.headers.host || "mediamozak.com";
+      return res.status(200).json({
+        anthropic: { set: !!(process.env.ANTHROPIC_API_KEY || cfg.anthropicSet), fromVercel: !!process.env.ANTHROPIC_API_KEY },
+        indiamart: { set: cfg.indiamartSet, last: cfg.indiamartLast, error: cfg.indiamartError },
+        leadApi: { url: "https://" + host + "/api/lead-in/", key: leadApiKey(cfg.leadApiVersion) },
+      });
+    }
+    if (a === "setKey") {
+      if (!owner) return res.status(403).json({ error: "Only the account owner can change API keys." });
+      const map = { anthropic: "ANTHROPIC_API_KEY", indiamart: "INDIAMART_KEY" };
+      if (!map[b.name]) return res.status(400).json({ error: "Unknown key" });
+      const value = String(b.value || "").trim().slice(0, 500);
+      if (b.name === "anthropic" && value && !/^sk-ant-/.test(value)) return res.status(400).json({ error: "That doesn't look like an Anthropic key (it should start with sk-ant-)." });
+      await store("setConfig", { key: map[b.name], value });
+      clearCache();
+      return res.status(200).json({ ok: true });
+    }
+    if (a === "regenApiKey") {
+      if (!owner) return res.status(403).json({ error: "Only the account owner can change API keys." });
+      const cfg = await getConfig(true);
+      await store("setConfig", { key: "LEAD_API_VERSION", value: String((Number(cfg.leadApiVersion) || 1) + 1) });
+      clearCache();
+      return res.status(200).json({ ok: true });
+    }
+    if (a === "imSync") {
+      if (!owner) return res.status(403).json({ error: "Only the account owner can run the import." });
+      const r = await store("indiamartSync").catch((e) => ({ ok: false, error: String(e.message || e) }));
+      if (!r.ok) return res.status(400).json({ error: "IndiaMART: " + (r.error || "sync failed").replace(/^Lead backend error on indiamartSync \(\d+\): /, "") });
+      return res.status(200).json({ added: r.added || 0 });
     }
     if (a === "waStatus") {
       const st = await store("waStatus");

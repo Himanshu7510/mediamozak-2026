@@ -2,6 +2,7 @@
 // Body: { messages: [{ role: "user"|"assistant", content: string }], page: string }
 // Reply: { reply: string, leadSaved: boolean }
 const { allowedOrigin, rateLimited, readBody, saveLead, clip, finalizeLead } = require("./_lib/leads");
+const { getAnthropicKey } = require("./_lib/config");
 
 const MODEL = process.env.CHAT_MODEL || "claude-haiku-5-5";
 const MAX_TURNS = 40;
@@ -79,12 +80,12 @@ const TOOLS = [
   },
 ];
 
-async function callClaude(messages) {
+async function callClaude(messages, apiKey) {
   const r = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-api-key": process.env.ANTHROPIC_API_KEY,
+      "x-api-key": apiKey,
       "anthropic-version": "2023-06-01",
     },
     body: JSON.stringify({ model: MODEL, max_tokens: 700, system: systemPrompt(), tools: TOOLS, messages }),
@@ -99,7 +100,8 @@ async function callClaude(messages) {
 module.exports = async (req, res) => {
   if (req.method !== "POST") return res.status(405).json({ error: "POST only" });
   if (!allowedOrigin(req)) return res.status(403).json({ error: "forbidden" });
-  if (!process.env.ANTHROPIC_API_KEY) return res.status(503).json({ error: "not_configured" });
+  const apiKey = await getAnthropicKey().catch(() => "");
+  if (!apiKey) return res.status(503).json({ error: "not_configured" });
   if (rateLimited(req, 40, 10 * 60 * 1000)) return res.status(429).json({ error: "rate_limited" });
 
   const b = readBody(req);
@@ -114,7 +116,7 @@ module.exports = async (req, res) => {
   let leadSaved = false;
   try {
     for (let step = 0; step < 4; step++) {
-      const out = await callClaude(messages);
+      const out = await callClaude(messages, apiKey);
       const toolUses = (out.content || []).filter((c) => c.type === "tool_use");
       const text = (out.content || []).filter((c) => c.type === "text").map((c) => c.text).join("\n").trim();
       if (out.stop_reason !== "tool_use" || !toolUses.length) {
