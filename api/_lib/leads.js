@@ -36,10 +36,32 @@ function readBody(req) {
 
 const clip = (v, n) => String(v == null ? "" : v).replace(/\s+/g, " ").trim().slice(0, n);
 
-async function saveLead(lead) {
+// Calls the Apps Script backend behind the leads sheet.
+async function store(action, payload) {
   const url = process.env.LEADS_WEBHOOK_URL;
   const secret = process.env.LEADS_SECRET;
   if (!url || !secret) throw new Error("Lead inbox is not configured");
+  // Apps Script answers with a 302 to the result; fetch follows it.
+  const r = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "text/plain;charset=utf-8" },
+    body: JSON.stringify(Object.assign({ secret, action }, payload || {})),
+    redirect: "follow",
+  });
+  const text = await r.text();
+  let j = {};
+  try { j = JSON.parse(text); } catch (e) {}
+  if (!r.ok || !j.ok) {
+    const body = (text.match(/<body[\s\S]*?<\/body>/i) || [text])[0];
+    const hint = body.replace(/<(script|style)[\s\S]*?<\/\1>/gi, " ").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 300);
+    const err = new Error("Lead backend error on " + action + " (" + r.status + "): " + (j.error || hint));
+    err.code = j.error;
+    throw err;
+  }
+  return j;
+}
+
+async function saveLead(lead) {
   const clean = {
     source: clip(lead.source, 40),
     name: clip(lead.name, 100),
@@ -50,26 +72,14 @@ async function saveLead(lead) {
     services: clip(lead.services, 300),
     budget: clip(lead.budget, 60),
     callTime: clip(lead.callTime, 120),
-    summary: String(lead.summary == null ? "" : lead.summary).trim().slice(0, 2000),
+    callDate: /^\d{4}-\d{2}-\d{2}$/.test(lead.callDate || "") ? lead.callDate : "",
+    summary: String(lead.summary == null ? "" : lead.summary).trim().slice(0, 3000),
+    transcript: String(lead.transcript == null ? "" : lead.transcript).slice(0, 40000),
     page: clip(lead.page, 300),
     language: clip(lead.language, 20),
   };
-  // Apps Script answers with a 302 to the result; fetch follows it.
-  const r = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "text/plain;charset=utf-8" },
-    body: JSON.stringify({ secret, lead: clean }),
-    redirect: "follow",
-  });
-  const text = await r.text();
-  let j = {};
-  try { j = JSON.parse(text); } catch (e) {}
-  if (!r.ok || !j.ok) {
-    const body = (text.match(/<body[\s\S]*?<\/body>/i) || [text])[0];
-    const hint = body.replace(/<(script|style)[\s\S]*?<\/\1>/gi, " ").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 300);
-    throw new Error("Lead inbox rejected the lead (" + r.status + "): " + (j.error || hint));
-  }
+  const j = await store("lead", { lead: clean });
   return j.id;
 }
 
-module.exports = { allowedOrigin, rateLimited, readBody, saveLead, clip };
+module.exports = { allowedOrigin, rateLimited, readBody, saveLead, store, clip };

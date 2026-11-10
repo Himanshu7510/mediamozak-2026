@@ -1,5 +1,7 @@
 User-agent: *
 Allow: /
 Disallow: /thank-you/
+Disallow: /crm/
+Disallow: /api/
 
 Sitemap: https://mediamozak.com/sitemap.xml

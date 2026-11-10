@@ -126,12 +126,11 @@ module.exports = async (req, res) => {
         let content;
         try {
           const i = tu.input || {};
-          const summary = [i.summary, i.call_date ? "Requested call date: " + i.call_date : ""].filter(Boolean).join("\n");
           const id = await saveLead({
             source: "AI chatbot",
             name: i.name, phone: i.phone, email: i.email, business: i.business, city: i.city,
-            services: i.services, budget: i.budget, callTime: i.call_time, language: i.language,
-            summary: summary + "\n\nChat transcript:\n" + transcript(raw), page,
+            services: i.services, budget: i.budget, callTime: i.call_time, callDate: i.call_date, language: i.language,
+            summary: i.summary, transcript: transcript(raw), page,
           });
           leadSaved = true;
           content = "Saved. Lead id " + id + ". Confirm the callback to the visitor.";
@@ -153,8 +152,8 @@ module.exports = async (req, res) => {
 function transcript(raw) {
   return raw
     .filter((m) => m && typeof m.content === "string")
-    .slice(-20)
-    .map((m) => (m.role === "user" ? "Visitor: " : "Assistant: ") + m.content.slice(0, 400))
-    .join("\n")
-    .slice(0, 1500);
+    .slice(-40)
+    .map((m) => (m.role === "user" ? "Visitor: " : "Assistant: ") + m.content.slice(0, 1500))
+    .join("\n\n")
+    .slice(0, 40000);
 }
