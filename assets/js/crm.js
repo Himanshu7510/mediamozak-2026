@@ -143,6 +143,7 @@
     var m = location.hash.match(/lead=([\w-]+)/);
     render();
     load().then(function () { if (m) openSheet(m[1]); });
+    if (me.role === "owner") checkSystem();
     api("waStatus").then(function (s) { wa = s; }).catch(function () {});
   }
 
@@ -469,6 +470,54 @@
     };
   }
 
+  var sys = null;
+  function checkSystem() {
+    return api("system").then(function (st) {
+      sys = st;
+      var n = $("#notice");
+      if (n && st.backend === "outdated") {
+        n.innerHTML = 'Finish setup (2 min): update the CRM backend to turn on API keys, the Lead API and IndiaMART import. <button class="btn sm" type="button" id="openSetup">Show me how</button>';
+        n.hidden = false;
+        $("#openSetup").onclick = openSetupGuide;
+      }
+      return st;
+    }).catch(function () {});
+  }
+
+  function openSetupGuide() {
+    var root = $("#modalRoot");
+    root.innerHTML = '<div class="scrim" id="gScrim"></div><div class="modal" role="dialog" aria-modal="true" aria-label="Update CRM backend"><div class="modal-card">' +
+      '<div class="actions"><h2 style="margin-right:auto">Update the CRM backend</h2><button class="btn sm" type="button" id="gClose">Close</button></div>' +
+      '<p class="help">Your leads live in the “Mediamozak Website Leads” Google Sheet. Its script needs a one-time update to version ' + esc((sys && sys.backendVersion) || "4") + '. Your leads are not touched.</p>' +
+      '<ol style="display:flex;flex-direction:column;gap:10px;padding-left:20px;margin:0">' +
+      '<li><button class="btn primary sm" type="button" id="copyCode">Copy backend code</button> <span class="help" id="copyMsg"></span></li>' +
+      '<li>Open the <a href="https://docs.google.com/spreadsheets/d/1Z13tW-kHxLDqG9j975nZZGzIqSJF8zr1AxZn-S6PvqY/edit" target="_blank" rel="noopener">leads sheet</a> → <strong>Extensions → Apps Script</strong>.</li>' +
+      '<li>Click in the code, press <strong>Ctrl + A</strong>, then <strong>Ctrl + V</strong> to replace everything. Press <strong>Ctrl + S</strong>.</li>' +
+      '<li>In the function dropdown pick <strong>authorize</strong> → <strong>▷ Run</strong> → allow the permissions (Advanced → Go to … → Allow).</li>' +
+      '<li><strong>Deploy → Manage deployments</strong> → pick the deployment ending <strong>…YhQw</strong> → ✏️ → Version: <strong>New version</strong> → Deploy.</li>' +
+      '<li><button class="btn sm" type="button" id="recheck">Check again</button> <span class="help" id="recheckMsg"></span></li></ol>' +
+      '<textarea id="codeBox" readonly style="min-height:120px;font-family:var(--mono);font-size:12px" hidden aria-label="Backend code"></textarea>' +
+      "</div></div>";
+    var close = function () { root.innerHTML = ""; };
+    $("#gScrim").onclick = close; $("#gClose").onclick = close;
+    $("#copyCode").onclick = function () {
+      var btn = $("#copyCode"); btn.disabled = true;
+      api("backendCode").then(function (j) {
+        var box = $("#codeBox"); box.value = j.code;
+        var done = function () { $("#copyMsg").textContent = "Copied ✓ — now paste it in Apps Script."; btn.disabled = false; };
+        if (navigator.clipboard) navigator.clipboard.writeText(j.code).then(done, function () { box.hidden = false; box.select(); $("#copyMsg").textContent = "Press Ctrl + C to copy the selected code."; btn.disabled = false; });
+        else { box.hidden = false; box.select(); $("#copyMsg").textContent = "Press Ctrl + C to copy the selected code."; btn.disabled = false; }
+      }).catch(function (e) { toast(e.message); btn.disabled = false; });
+    };
+    $("#recheck").onclick = function () {
+      $("#recheckMsg").textContent = "Checking…";
+      checkSystem().then(function (st) {
+        if (st && st.backend === "ok") { $("#recheckMsg").textContent = "✓ Backend is up to date. API options are ready in Settings."; var n = $("#notice"); if (n) n.hidden = true; }
+        else $("#recheckMsg").textContent = "Not updated yet. Make sure you chose “New version” on the …YhQw deployment.";
+      });
+    };
+  }
+
   function renderIntegrations() {
     var box = $("#intBox"); if (!box) return;
     api("integrations").then(function (it) {
@@ -525,7 +574,10 @@
         api("imSync", {}).then(function (j) { toast(j.added ? j.added + " new IndiaMART lead(s) added" : "No new IndiaMART leads"); load(); renderIntegrations(); })
           .catch(function (e) { toast(e.message); sy.disabled = false; sy.textContent = "Sync now"; });
       };
-    }).catch(function (e) { box.innerHTML = "<h3>Integrations &amp; API keys</h3><p class=\"err\">" + esc(e.message) + "</p>"; });
+    }).catch(function (e) {
+      box.innerHTML = '<h3>Integrations &amp; API keys</h3><p class="help">These options need a one-time update of the CRM backend.</p><div><button class="btn sm primary" type="button" id="setupFromSettings">Update backend (2 min)</button></div>';
+      $("#setupFromSettings").onclick = openSetupGuide;
+    });
   }
 
   function exportCsv() {

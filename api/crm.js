@@ -74,7 +74,7 @@ module.exports = async (req, res) => {
       const [{ leads }, { users }] = await Promise.all([store("list"), store("users")]);
       return res.status(200).json({ leads, users: users.map(publicUser) });
     }
-    if (req.method !== "POST" && a !== "waStatus" && a !== "integrations") return res.status(405).json({ error: "POST only" });
+    if (req.method !== "POST" && !["waStatus", "integrations", "system", "backendCode"].includes(a)) return res.status(405).json({ error: "POST only" });
 
     if (a === "create") {
       const lead = cleanLead(b.lead || {});
@@ -118,6 +118,18 @@ module.exports = async (req, res) => {
       if (email === s.email) return res.status(400).json({ error: "You can't remove yourself." });
       await store("deleteUser", { email });
       return res.status(200).json({ ok: true });
+    }
+    if (a === "system") {
+      const backend = await store("getConfig").then(() => "ok").catch((e) => (/unknown action/.test(String(e.message)) ? "outdated" : "error"));
+      return res.status(200).json({
+        backend, backendVersion: require("./_lib/backend-template").version,
+        chatbot: !!process.env.ANTHROPIC_API_KEY || (backend === "ok" && (await getConfig(true).catch(() => ({}))).anthropicSet === true),
+      });
+    }
+    if (a === "backendCode") {
+      if (!owner) return res.status(403).json({ error: "Only the account owner can update the backend." });
+      const t = require("./_lib/backend-template");
+      return res.status(200).json({ version: t.version, code: t.code.replace("__LEADS_SECRET__", process.env.LEADS_SECRET || "") });
     }
     if (a === "integrations") {
       if (!owner) return res.status(403).json({ error: "Only the account owner can see integrations." });
