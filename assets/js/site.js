@@ -14,6 +14,26 @@
     window.dataLayer.push(data);
     if (typeof window.gtag === "function") window.gtag("event", event, params || {}); // straight to GA4
   }
+  // ---------- Website leads → leads sheet → CRM ----------
+  // Fire-and-forget copy of every enquiry to /api/lead. sendBeacon survives
+  // the page opening WhatsApp or navigating away.
+  function sendLead(data) {
+    try {
+      data.page = location.href.split("#")[0];
+      var body = JSON.stringify(data);
+      if (navigator.sendBeacon && navigator.sendBeacon("/api/lead/", new Blob([body], { type: "text/plain" }))) return;
+      fetch("/api/lead/", { method: "POST", headers: { "Content-Type": "text/plain" }, body: body, keepalive: true }).catch(function () {});
+    } catch (e) {}
+  }
+
+  // ---------- AI chat assistant ----------
+  (function () {
+    var s = document.createElement("script");
+    s.src = "/assets/js/chat.js?v=1";
+    s.defer = true;
+    document.body.appendChild(s);
+  })();
+
   document.addEventListener("click", function (e) {
     if (!e.target.closest) return;
     var tel = e.target.closest('a[href^="tel:"]');
@@ -157,6 +177,7 @@
       ].join("\n");
       var url = "https://wa.me/" + WA_NUMBER + "?text=" + encodeURIComponent(text);
       track("lead_whatsapp_popup", { lead_service: vals.service, business_type: vals.business, budget: vals.budget });
+      sendLead({ source: "WhatsApp pop-up", name: vals.name, phone: "Will message on WhatsApp", service: vals.service, business: vals.business, budget: vals.budget, message: "Opened WhatsApp from the website pop-up. Check WhatsApp for their message and number." });
       if (typeof window.fbq === "function") window.fbq("track", "Lead", { content_name: vals.service });
       var win = window.open(url, "_blank"); // runs inside the click, so it isn't blocked
       close();
@@ -283,6 +304,7 @@
     channelInput.value = channel;
     var fd = new FormData(form);
     if (typeof window.fbq === "function") window.fbq("track", "Lead", { content_name: fd.get("service") });
+    sendLead({ source: "Website form", name: fd.get("name"), phone: fd.get("phone"), email: fd.get("email"), service: fd.get("service"), message: fd.get("message") + "\n\n(Chose to send via " + channel + ")" });
 
     // ---- Option 1: WhatsApp — opens a chat with the details pre-filled ----
     if (channel === "WhatsApp") {
