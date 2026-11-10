@@ -104,6 +104,7 @@
       '<header class="top"><div class="wrap"><div class="top-row">' +
       '<div class="brand"><div class="mark" aria-hidden="true">M</div><div><h1>Lead Desk</h1><small>Mediamozak · digital marketing &amp; web development</small></div></div>' +
       '<span class="who">' + esc(me.name) + (me.role === "owner" ? " · Owner" : "") + "</span>" +
+      (me.role === "owner" ? '<button class="btn sm ghost" id="integBtn" type="button">Integrations</button>' : "") +
       '<button class="btn sm ghost" id="settingsBtn" type="button">Settings</button>' +
       '<button class="btn sm ghost" id="exportBtn" type="button">Export CSV</button>' +
       '<button class="btn sm ghost" id="logoutBtn" type="button">Sign out</button>' +
@@ -136,6 +137,7 @@
     $("#addBtn").onclick = function () { openSheet(""); };
     $("#exportBtn").onclick = exportCsv;
     $("#settingsBtn").onclick = openSettings;
+    if ($("#integBtn")) $("#integBtn").onclick = function () { openSettings(); setTimeout(function () { var b = $("#intBox"); if (b) b.scrollIntoView({ block: "start" }); }, 50); };
     $("#logoutBtn").onclick = function () { api("logout", {}).finally(function () { me = null; renderAuth(false); }); };
 
     var h = location.hash.replace("#", "");
@@ -417,7 +419,7 @@
         (owner && u.email !== me.email ? '<button class="btn sm" type="button" data-reset="' + esc(u.email) + '">Set password</button><button class="btn sm" type="button" data-toggle="' + esc(u.email) + '" data-active="' + u.active + '">' + (u.active ? "Disable" : "Enable") + '</button><button class="btn sm danger" type="button" data-remove="' + esc(u.email) + '">Remove</button>' : "") + "</div>";
     }).join("");
     var w = wa || {};
-    root.innerHTML = '<div class="scrim" id="mScrim"></div><div class="modal" role="dialog" aria-modal="true" aria-label="Settings"><div class="modal-card">' +
+    root.innerHTML = '<div class="scrim" id="mScrim"></div><div class="modal" role="dialog" aria-modal="true" aria-label="Settings"><div class="modal-card" style="width:min(980px,100%)">' +
       '<div class="actions"><h2 style="margin-right:auto">Settings</h2><button class="btn sm" type="button" id="mClose">Close</button></div>' +
       '<section><h3>Your password</h3><div class="grid2"><label class="f"><span>Current password</span><input type="password" id="pw-cur" autocomplete="current-password"></label><label class="f"><span>New password (8+)</span><input type="password" id="pw-new" autocomplete="new-password"></label></div><div><button class="btn sm" type="button" id="pwSave">Change password</button></div></section>' +
       '<section><h3>Team</h3>' + teamHtml +
@@ -476,7 +478,7 @@
       sys = st;
       var n = $("#notice");
       if (n && st.backend === "outdated") {
-        n.innerHTML = 'Finish setup (2 min): update the CRM backend to turn on API keys, the Lead API and IndiaMART import. <button class="btn sm" type="button" id="openSetup">Show me how</button>';
+        n.innerHTML = 'Finish setup (2 min): update the CRM backend to connect Meta Lead Ads, Google Ads, IndiaMART, JustDial, LinkedIn and the AI chatbot. <button class="btn sm" type="button" id="openSetup">Show me how</button>';
         n.hidden = false;
         $("#openSetup").onclick = openSetupGuide;
       }
@@ -521,39 +523,82 @@
   function renderIntegrations() {
     var box = $("#intBox"); if (!box) return;
     api("integrations").then(function (it) {
-      var pill = function (on, txt) { return on ? '<span class="ok-pill">' + (txt || "Connected") + "</span>" : '<span class="off-pill">Not set</span>'; };
-      var sample = JSON.stringify({ name: "Rohit Sharma", phone: "9876543210", email: "rohit@example.com", business: "Sharma Dental", city: "Delhi", service: "Search Engine Optimization (SEO)", message: "Need more patients from Google", source: "Meta ads" }, null, 2);
-      box.innerHTML = "<h3>Integrations &amp; API keys</h3>" +
-        // AI chatbot key
-        '<div class="panel" style="padding:12px"><div class="actions"><strong style="margin-right:auto">AI chatbot (Anthropic API key)</strong>' + pill(it.anthropic.set, it.anthropic.fromVercel ? "Set on Vercel" : "Connected") + "</div>" +
-        '<p class="help">Powers the chat assistant on mediamozak.com. Create a key at console.anthropic.com → API Keys. The chat button appears on the website within ~5 minutes of saving.</p>' +
-        (it.anthropic.fromVercel ? '<p class="help">This key is set in Vercel and takes priority. Change it there.</p>' :
-          '<div class="actions"><input type="password" id="k-anthropic" placeholder="sk-ant-…" autocomplete="off" style="flex:1;min-width:200px"><button class="btn sm primary" type="button" data-savekey="anthropic">Save</button>' + (it.anthropic.set ? '<button class="btn sm danger" type="button" data-clearkey="anthropic">Remove</button>' : "") + "</div>") + "</div>" +
-        // IndiaMART
-        '<div class="panel" style="padding:12px"><div class="actions"><strong style="margin-right:auto">IndiaMART auto-import</strong>' + pill(it.indiamart.set) + "</div>" +
-        '<p class="help">Pulls your IndiaMART enquiries into the CRM every 10 minutes (source: IndiaMART). Get the key at seller.indiamart.com → Lead Manager → ⋮ → Import/Export Leads → Pull API → Generate Key (paid sellers).</p>' +
-        (it.indiamart.last ? '<p class="help">Last sync: ' + esc(it.indiamart.last) + "</p>" : "") +
-        (it.indiamart.error ? '<p class="err" style="font-size:13px">' + esc(it.indiamart.error) + "</p>" : "") +
-        '<div class="actions"><input type="password" id="k-indiamart" placeholder="IndiaMART CRM key" autocomplete="off" style="flex:1;min-width:200px"><button class="btn sm primary" type="button" data-savekey="indiamart">Save</button>' +
-        (it.indiamart.set ? '<button class="btn sm" type="button" id="imSync">Sync now</button><button class="btn sm danger" type="button" data-clearkey="indiamart">Remove</button>' : "") + "</div></div>" +
-        // Lead API
-        '<div class="panel" style="padding:12px"><strong>Lead API (for Zapier, Meta Lead Ads, JustDial, other websites)</strong>' +
-        '<p class="help">Send a POST request with JSON or form fields. Leads appear in the CRM instantly and trigger the usual email alert.</p>' +
-        '<label class="f"><span>Endpoint</span><div class="actions"><code class="num" style="background:var(--raised);padding:6px 8px;border-radius:6px;user-select:all;overflow-wrap:anywhere;flex:1">' + esc(it.leadApi.url) + '</code><button class="btn sm" type="button" data-copy="' + esc(it.leadApi.url) + '">Copy</button></div></label>' +
-        '<label class="f"><span>API key (send as header X-API-Key, or ?key=)</span><div class="actions"><code class="num" id="apiKeyTxt" style="background:var(--raised);padding:6px 8px;border-radius:6px;user-select:all;overflow-wrap:anywhere;flex:1">' + esc(it.leadApi.key) + '</code><button class="btn sm" type="button" data-copy="' + esc(it.leadApi.key) + '">Copy</button><button class="btn sm danger" type="button" id="regenKey">Regenerate</button></div></label>' +
-        '<details class="box"><summary>Fields &amp; example</summary><p class="help">Accepted fields: <code>name</code>, <code>phone</code>, <code>email</code>, <code>business</code>, <code>city</code>, <code>service</code> (one of the 7 website services), <code>message</code>, <code>budget</code>, <code>source</code> (e.g. Meta ads, Google ads, JustDial, Referral), <code>id</code> (your system\'s lead id, prevents duplicates). Meta Lead Ads <code>field_data</code> is understood too.</p><pre class="transcript" style="color:var(--ink)">' + esc(sample) + "</pre></details></div>";
+      if (Number(it.backendVersion || 4) < 5) throw new Error("outdated");
+      var pill = function (on, txt) { return on ? '<span class="ok-pill">' + (txt || "Connected") + "</span>" : '<span class="off-pill">Not connected</span>'; };
+      var copyRow = function (label, value) {
+        return '<label class="f"><span>' + label + '</span><div class="actions"><code class="num" style="background:var(--raised);padding:6px 8px;border-radius:6px;user-select:all;overflow-wrap:anywhere;flex:1;min-width:0">' + esc(value) + '</code><button class="btn sm" type="button" data-copy="' + esc(value) + '">Copy</button></div></label>';
+      };
+      var keyRow = function (name, ph, isSet) {
+        return '<div class="actions"><input type="password" id="k-' + name + '" placeholder="' + esc(ph) + '" autocomplete="off" style="flex:1;min-width:200px"><button class="btn sm primary" type="button" data-savekey="' + name + '">' + (isSet ? "Replace" : "Save") + "</button>" +
+          (isSet ? '<button class="btn sm danger" type="button" data-clearkey="' + name + '">Remove</button>' : "") + "</div>";
+      };
+      var lastFrom = function (src) {
+        var l = leads.filter(function (x) { return x.source === src; }).sort(function (a, b) { return (b.createdAt || "").localeCompare(a.createdAt || ""); })[0];
+        return l ? '<p class="help">Last lead: ' + esc(new Date(l.createdAt).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })) + " · " + esc(l.name || l.contact) + "</p>" : "";
+      };
+      var steps = function (arr) { return '<details class="box"><summary>How to connect</summary><ol class="help" style="margin:8px 0 0;padding-left:18px;display:flex;flex-direction:column;gap:4px">' + arr.map(function (x) { return "<li>" + x + "</li>"; }).join("") + "</ol></details>"; };
+      var card = function (title, status, body) { return '<div class="panel" style="padding:12px;display:flex;flex-direction:column;gap:10px"><div class="actions"><strong style="margin-right:auto">' + title + "</strong>" + status + "</div>" + body + "</div>"; };
+      var jdUrl = it.leadApi.url + "?key=" + encodeURIComponent(it.leadApi.key) + "&source=JustDial";
+      var sample = JSON.stringify({ name: "Rohit Sharma", phone: "9876543210", email: "rohit@example.com", business: "Sharma Dental", city: "Delhi", service: "Search Engine Optimization (SEO)", message: "Need more patients from Google", source: "LinkedIn", id: "your-lead-id-123" }, null, 2);
+
+      box.innerHTML = "<h3>Integrations &amp; API keys</h3><p class=\"help\">Connect each platform once; its leads then arrive in the CRM automatically with the right source and an email alert. Keys are stored securely in your Google backend, never in the sheet.</p>" +
+        '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px">' +
+
+        card("🤖 AI chatbot (Anthropic)", pill(it.anthropic.set, it.anthropic.fromVercel ? "Set on Vercel" : "Connected"),
+          '<p class="help">Powers the chat assistant on mediamozak.com (leads tagged “AI chatbot”).</p>' + lastFrom("AI chatbot") +
+          (it.anthropic.fromVercel ? '<p class="help">This key is set in Vercel and takes priority.</p>' : keyRow("anthropic", "sk-ant-…", it.anthropic.set)) +
+          steps(["Go to console.anthropic.com → sign in.", "Settings → Billing → add credit (about $5 lasts a long time).", "Settings → API Keys → Create Key → copy it (starts with sk-ant-).", "Paste it above and Save. The chat button appears on your website within ~5 minutes."])) +
+
+        card("📘 Meta Lead Ads (Facebook &amp; Instagram)", pill(it.meta.tokenSet),
+          '<p class="help">Instant forms on Facebook and Instagram ads → CRM (tagged “Meta ads”, with campaign and ad name).</p>' + lastFrom("Meta ads") +
+          copyRow("Callback URL", it.meta.callback) + copyRow("Verify token", it.meta.verifyToken) +
+          '<label class="f"><span>Page access token</span></label>' + keyRow("metaToken", "EAAG… (Page access token with leads_retrieval)", it.meta.tokenSet) +
+          '<label class="f"><span>App secret (optional, adds signature check)</span></label>' + keyRow("metaSecret", "App secret", it.meta.secretSet) +
+          steps(["Open developers.facebook.com → your app (create a Business app if needed) → add the <strong>Webhooks</strong> product.", "Webhooks → choose <strong>Page</strong> → Subscribe to this object → paste the <strong>Callback URL</strong> and <strong>Verify token</strong> above → Verify and save → subscribe to the <strong>leadgen</strong> field.", "In Business settings → System users, generate a token for your Page with <strong>leads_retrieval, pages_show_list, pages_manage_metadata, pages_read_engagement</strong> → paste it above as Page access token.", "Connect the Page to the app (Graph API: POST /{page-id}/subscribed_apps?subscribed_fields=leadgen) or via the Lead Ads Testing Tool.", "Test with developers.facebook.com/tools/lead-ads-testing — the test lead should appear in the CRM."])) +
+
+        card("🔎 Google Ads lead forms", '<span class="ok-pill">Ready</span>',
+          '<p class="help">Lead form assets in Search, YouTube, Discovery &amp; Performance Max → CRM (tagged “Google ads”).</p>' + lastFrom("Google ads") +
+          copyRow("Webhook URL", it.google.url) + copyRow("Key", it.google.key) +
+          steps(["Google Ads → Assets → Lead forms → open your lead form (or create one).", "Lead delivery options → <strong>Webhook integration</strong>.", "Paste the <strong>Webhook URL</strong> and <strong>Key</strong> above.", "Click <strong>Send test data</strong> — a lead marked “TEST LEAD” should appear in the CRM. Save the form."])) +
+
+        card("🛒 IndiaMART", pill(it.indiamart.set),
+          '<p class="help">Buyer enquiries pulled every 10 minutes (tagged “IndiaMART”).</p>' + lastFrom("IndiaMART") +
+          (it.indiamart.last ? '<p class="help">Last sync: ' + esc(it.indiamart.last) + "</p>" : "") +
+          (it.indiamart.error ? '<p class="err" style="font-size:13px">' + esc(it.indiamart.error) + "</p>" : "") +
+          keyRow("indiamart", "IndiaMART CRM key", it.indiamart.set) + (it.indiamart.set ? '<div><button class="btn sm" type="button" id="imSync">Sync now</button></div>' : "") +
+          steps(["Log in to seller.indiamart.com (paid seller plan).", "Lead Manager → ⋮ → Import/Export Leads → <strong>Pull API</strong> → Generate Key.", "Paste the key above and Save. Leads from the last 24 hours are imported on the first sync."])) +
+
+        card("📒 JustDial", '<span class="ok-pill">Ready</span>',
+          '<p class="help">JustDial pushes each enquiry to your link (tagged “JustDial”).</p>' + lastFrom("JustDial") +
+          copyRow("Your JustDial lead URL", jdUrl) +
+          steps(["Email or call your JustDial account manager and ask for <strong>“Lead API / CRM integration (GET push)”</strong>.", "Give them the URL above. JustDial sends name, mobile, email, category, city and area to it.", "Ask them to send a test lead — it should appear in the CRM."])) +
+
+        card("💼 LinkedIn Lead Gen Forms", '<span class="ok-pill">Via Zapier / Make</span>',
+          '<p class="help">LinkedIn only shares leads with approved partners, so connect through Zapier or Make (tagged “LinkedIn”).</p>' + lastFrom("LinkedIn") +
+          steps(["In Zapier: trigger <strong>LinkedIn Lead Gen Forms → New Form Response</strong>.", "Action: <strong>Webhooks by Zapier → POST</strong> to the Lead API endpoint below.", "Add header <strong>X-API-Key</strong> = your Lead API key, and map fields name, phone, email, business, city, service, message, plus <strong>source = LinkedIn</strong> and <strong>id</strong> = the response ID.", "Turn on the Zap and submit a test form."])) +
+
+        card("🔗 Lead API (Zapier, Make, Pabbly, other websites)", '<span class="ok-pill">Ready</span>',
+          '<p class="help">Any tool can send leads here: Sulekha, UrbanCompany, TradeIndia, landing pages, Google Forms (via Apps Script), Typeform, etc.</p>' +
+          copyRow("Endpoint (POST JSON or form; GET with ?key=)", it.leadApi.url) + copyRow("API key (header X-API-Key, or ?key=)", it.leadApi.key) +
+          '<details class="box"><summary>Fields &amp; example</summary><p class="help">Fields: <code>name</code>, <code>phone</code>, <code>email</code>, <code>business</code>, <code>city</code>, <code>service</code> (one of your 7 services), <code>message</code>, <code>budget</code>, <code>source</code> (Meta ads, Google ads, JustDial, IndiaMART, LinkedIn, Referral, Website form, Other), <code>id</code> (prevents duplicates).</p><pre class="transcript" style="color:var(--ink)">' + esc(sample) + "</pre></details>" +
+          '<div><button class="btn sm danger" type="button" id="regenKey">Regenerate API key</button></div>') +
+
+        card("💬 WhatsApp Business", pill(wa && wa.configured),
+          '<p class="help">New-lead alerts and one-click template replies. Set it up in the <strong>WhatsApp Business</strong> section below.</p>') +
+        "</div>" +
+        '<div class="actions"><button class="btn sm ghost" type="button" id="regenHooks">Regenerate Meta verify token &amp; Google key</button><span class="help">Only if they leak — you must re-enter them in Meta and Google afterwards.</span></div>';
 
       box.querySelectorAll("[data-savekey]").forEach(function (b) {
         b.onclick = function () {
           var v = $("#k-" + b.dataset.savekey).value.trim(); if (!v) { toast("Paste the key first"); return; }
           b.disabled = true;
-          api("setKey", { name: b.dataset.savekey, value: v }).then(function () { toast("Key saved"); renderIntegrations(); }).catch(function (e) { toast(e.message); b.disabled = false; });
+          api("setKey", { name: b.dataset.savekey, value: v }).then(function () { toast("Saved"); renderIntegrations(); }).catch(function (e) { toast(e.message); b.disabled = false; });
         };
       });
       box.querySelectorAll("[data-clearkey]").forEach(function (b) {
         b.onclick = function () {
           if (!b.dataset.confirm) { b.dataset.confirm = "1"; b.textContent = "Confirm remove"; return; }
-          api("setKey", { name: b.dataset.clearkey, value: "" }).then(function () { toast("Key removed"); renderIntegrations(); }).catch(function (e) { toast(e.message); });
+          api("setKey", { name: b.dataset.clearkey, value: "" }).then(function () { toast("Removed"); renderIntegrations(); }).catch(function (e) { toast(e.message); });
         };
       });
       box.querySelectorAll("[data-copy]").forEach(function (b) {
@@ -563,19 +608,23 @@
           else toast("Select the text and copy it");
         };
       });
-      var rg = $("#regenKey");
-      if (rg) rg.onclick = function () {
-        if (!rg.dataset.confirm) { rg.dataset.confirm = "1"; rg.textContent = "Confirm: old key stops working"; return; }
-        api("regenApiKey", {}).then(function () { toast("New API key created"); renderIntegrations(); }).catch(function (e) { toast(e.message); });
+      var confirmBtn = function (id, label, action, msg) {
+        var el = $("#" + id); if (!el) return;
+        el.onclick = function () {
+          if (!el.dataset.confirm) { el.dataset.confirm = "1"; el.textContent = label; return; }
+          api(action, {}).then(function () { toast(msg); renderIntegrations(); }).catch(function (e) { toast(e.message); });
+        };
       };
+      confirmBtn("regenKey", "Confirm: old key stops working", "regenApiKey", "New API key created");
+      confirmBtn("regenHooks", "Confirm: re-enter them in Meta & Google", "regenHookKeys", "New webhook keys created");
       var sy = $("#imSync");
       if (sy) sy.onclick = function () {
         sy.disabled = true; sy.textContent = "Syncing…";
         api("imSync", {}).then(function (j) { toast(j.added ? j.added + " new IndiaMART lead(s) added" : "No new IndiaMART leads"); load(); renderIntegrations(); })
           .catch(function (e) { toast(e.message); sy.disabled = false; sy.textContent = "Sync now"; });
       };
-    }).catch(function (e) {
-      box.innerHTML = '<h3>Integrations &amp; API keys</h3><p class="help">These options need a one-time update of the CRM backend.</p><div><button class="btn sm primary" type="button" id="setupFromSettings">Update backend (2 min)</button></div>';
+    }).catch(function () {
+      box.innerHTML = '<h3>Integrations &amp; API keys</h3><p class="help">Connect Meta Lead Ads, Google Ads lead forms, IndiaMART, JustDial, LinkedIn, Zapier and the AI chatbot here. First, a one-time 2-minute update of the CRM backend is needed.</p><div><button class="btn sm primary" type="button" id="setupFromSettings">Update backend (2 min)</button></div>';
       $("#setupFromSettings").onclick = openSetupGuide;
     });
   }

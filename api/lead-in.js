@@ -37,9 +37,10 @@ function parse(req) {
 module.exports = async (req, res) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, X-API-Key");
-  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   if (req.method === "OPTIONS") return res.status(204).end();
-  if (req.method !== "POST") return res.status(405).json({ ok: false, error: "Use POST" });
+  // GET is allowed for platforms that push with query parameters (e.g. JustDial).
+  if (req.method !== "POST" && req.method !== "GET") return res.status(405).json({ ok: false, error: "Use POST or GET" });
   if (rateLimited(req, 60, 10 * 60 * 1000)) return res.status(429).json({ ok: false, error: "Too many requests" });
 
   const given = String(req.headers["x-api-key"] || (req.query && req.query.key) || "");
@@ -52,18 +53,19 @@ module.exports = async (req, res) => {
   const b = parse(req);
   const name = pick(b, ["name", "full_name", "fullName", "contact", "contact_name", "first_name", "SENDER_NAME"]);
   const phone = pick(b, ["phone", "phone_number", "mobile", "whatsapp", "contact_number", "SENDER_MOBILE"]);
+  delete b.key;
   const email = pick(b, ["email", "email_address", "SENDER_EMAIL"]);
   if (!name && !phone && !email) return res.status(400).json({ ok: false, error: "Send at least a name, phone or email" });
-  const service = pick(b, ["service", "services", "interested_in", "requirement", "product"]);
+  const service = pick(b, ["service", "services", "interested_in", "requirement", "product", "category"]);
   const message = pick(b, ["message", "notes", "comments", "query", "description", "requirement_details"]);
-  const extId = pick(b, ["id", "lead_id", "leadgen_id", "external_id"]);
+  const extId = pick(b, ["id", "lead_id", "leadid", "leadgen_id", "external_id"]);
   const source = pickSource(pick(b, ["source", "lead_source", "platform", "utm_source"]));
 
   try {
     const r = await store("apiLead", {
       lead: {
         source, name: clip(name || "Unknown", 100), phone: clip(phone, 30), email: clip(email, 120),
-        business: clip(pick(b, ["business", "company", "company_name", "business_name"]), 150), city: clip(pick(b, ["city", "location"]), 80),
+        business: clip(pick(b, ["business", "company", "company_name", "business_name"]), 150), city: clip([pick(b, ["city", "location"]), pick(b, ["area"])].filter(Boolean).join(", "), 80),
         services: clip(service, 300), budget: clip(pick(b, ["budget"]), 60),
         summary: [message, pick(b, ["campaign", "campaign_name", "ad_name", "form_name"]) ? "Campaign/form: " + pick(b, ["campaign", "campaign_name", "ad_name", "form_name"]) : ""].filter(Boolean).join("\n").slice(0, 3000),
         ref: extId ? clip("api:" + source + ":" + extId, 200) : "",

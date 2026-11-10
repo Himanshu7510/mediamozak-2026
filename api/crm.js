@@ -1,7 +1,7 @@
 // /api/crm/?a=<action> — the private CRM at mediamozak.com/crm.
 const { allowedOrigin, rateLimited, readBody, store, clip } = require("./_lib/leads");
 const { hashPassword, verifyPassword, getSession, setSession, clearSession, safeEqual } = require("./_lib/auth");
-const { getConfig, clearCache, leadApiKey } = require("./_lib/config");
+const { getConfig, clearCache, leadApiKey, hookKey } = require("./_lib/config");
 
 const STAGES = ["prospect", "new", "contacted", "qualified", "proposal", "won", "lost"];
 const FIELDS = ["stage", "priority", "name", "contact", "phone", "email", "website", "city", "niche", "services", "source", "value", "followUp", "assignedTo", "notes", "budget", "callTime", "language", "ref"];
@@ -120,7 +120,8 @@ module.exports = async (req, res) => {
       return res.status(200).json({ ok: true });
     }
     if (a === "system") {
-      const backend = await store("getConfig").then(() => "ok").catch((e) => (/unknown action/.test(String(e.message)) ? "outdated" : "error"));
+      const want = Number(require("./_lib/backend-template").version);
+      const backend = await store("getConfig").then((c) => (Number(c.version || 4) >= want ? "ok" : "outdated")).catch((e) => (/unknown action/.test(String(e.message)) ? "outdated" : "error"));
       return res.status(200).json({
         backend, backendVersion: require("./_lib/backend-template").version,
         chatbot: !!process.env.ANTHROPIC_API_KEY || (backend === "ok" && (await getConfig(true).catch(() => ({}))).anthropicSet === true),
@@ -139,11 +140,14 @@ module.exports = async (req, res) => {
         anthropic: { set: !!(process.env.ANTHROPIC_API_KEY || cfg.anthropicSet), fromVercel: !!process.env.ANTHROPIC_API_KEY },
         indiamart: { set: cfg.indiamartSet, last: cfg.indiamartLast, error: cfg.indiamartError },
         leadApi: { url: "https://" + host + "/api/lead-in/", key: leadApiKey(cfg.leadApiVersion) },
+        meta: { callback: "https://" + host + "/api/hooks/meta/", verifyToken: hookKey("meta", cfg.hookKeyVersion), tokenSet: !!cfg.metaTokenSet, secretSet: !!cfg.metaSecretSet },
+        google: { url: "https://" + host + "/api/hooks/google/", key: hookKey("google", cfg.hookKeyVersion) },
+        backendVersion: cfg.version || "4",
       });
     }
     if (a === "setKey") {
       if (!owner) return res.status(403).json({ error: "Only the account owner can change API keys." });
-      const map = { anthropic: "ANTHROPIC_API_KEY", indiamart: "INDIAMART_KEY" };
+      const map = { anthropic: "ANTHROPIC_API_KEY", indiamart: "INDIAMART_KEY", metaToken: "META_PAGE_TOKEN", metaSecret: "META_APP_SECRET" };
       if (!map[b.name]) return res.status(400).json({ error: "Unknown key" });
       const value = String(b.value || "").trim().slice(0, 500);
       if (b.name === "anthropic" && value && !/^sk-ant-/.test(value)) return res.status(400).json({ error: "That doesn't look like an Anthropic key (it should start with sk-ant-)." });
@@ -155,6 +159,13 @@ module.exports = async (req, res) => {
       if (!owner) return res.status(403).json({ error: "Only the account owner can change API keys." });
       const cfg = await getConfig(true);
       await store("setConfig", { key: "LEAD_API_VERSION", value: String((Number(cfg.leadApiVersion) || 1) + 1) });
+      clearCache();
+      return res.status(200).json({ ok: true });
+    }
+    if (a === "regenHookKeys") {
+      if (!owner) return res.status(403).json({ error: "Only the account owner can change API keys." });
+      const cfg = await getConfig(true);
+      await store("setConfig", { key: "HOOK_KEY_VERSION", value: String((Number(cfg.hookKeyVersion) || 1) + 1) });
       clearCache();
       return res.status(200).json({ ok: true });
     }
