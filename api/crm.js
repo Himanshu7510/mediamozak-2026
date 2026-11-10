@@ -21,6 +21,18 @@ function cleanLead(p) {
   return out;
 }
 
+const DEFAULT_QUICK_REPLIES = [
+  { title: "Intro", text: "Hi {first_name}, this is {my_name} from Mediamozak. Thank you for your enquiry about {service}. When would be a good time for a quick 10-minute call?" },
+  { title: "Couldn't reach you", text: "Hi {first_name}, I tried calling you about {service} but couldn't reach you. Please share a convenient time to talk. – {my_name}, Mediamozak" },
+  { title: "Follow-up", text: "Hi {first_name}, just following up on your enquiry about {service}. Shall I share a quick plan and quote for {business}?" },
+  { title: "Proposal sent", text: "Hi {first_name}, I've sent the proposal for {service} to your email. Happy to walk you through it – let me know a convenient time. – {my_name}" },
+  { title: "Meeting confirmation", text: "Hi {first_name}, confirming our call about {service}. Talk soon! – {my_name}, Mediamozak (+91 79829 84658)" },
+];
+function parseQuick(s) {
+  try { const a = JSON.parse(s || ""); if (Array.isArray(a) && a.length) return a.slice(0, 20).map((q) => ({ title: clip(q.title, 40), text: String(q.text || "").slice(0, 1000) })); } catch (e) {}
+  return DEFAULT_QUICK_REPLIES;
+}
+
 const publicUser = (u) => ({ email: u.email, name: u.name, role: u.role, active: u.active !== "false" });
 
 module.exports = async (req, res) => {
@@ -74,7 +86,7 @@ module.exports = async (req, res) => {
       const [{ leads }, { users }] = await Promise.all([store("list"), store("users")]);
       return res.status(200).json({ leads, users: users.map(publicUser) });
     }
-    if (req.method !== "POST" && !["waStatus", "integrations", "system", "backendCode"].includes(a)) return res.status(405).json({ error: "POST only" });
+    if (req.method !== "POST" && !["waStatus", "integrations", "system", "backendCode", "automation"].includes(a)) return res.status(405).json({ error: "POST only" });
 
     if (a === "create") {
       const lead = cleanLead(b.lead || {});
@@ -83,7 +95,9 @@ module.exports = async (req, res) => {
       return res.status(200).json({ lead: r.lead });
     }
     if (a === "patch") {
-      const r = await store("patch", { id: clip(b.id, 60), patch: cleanLead(b.patch || {}), note: String(b.note || "").slice(0, 1000), by });
+      const m = b.meta && typeof b.meta === "object" ? b.meta : null;
+      const meta = m && /^(call|whatsapp|email|meeting|note)$/.test(m.type || "") ? { type: m.type, outcome: clip(m.outcome, 40), minutes: Math.max(0, Math.min(600, Number(m.minutes) || 0)) } : null;
+      const r = await store("patch", { id: clip(b.id, 60), patch: cleanLead(b.patch || {}), note: String(b.note || "").slice(0, 1000), by, meta });
       return res.status(200).json({ lead: r.lead });
     }
     if (a === "delete") {
@@ -161,6 +175,39 @@ module.exports = async (req, res) => {
       await store("setConfig", { key: "LEAD_API_VERSION", value: String((Number(cfg.leadApiVersion) || 1) + 1) });
       clearCache();
       return res.status(200).json({ ok: true });
+    }
+    if (a === "automation") {
+      let cfg = {};
+      try { cfg = await getConfig(true); } catch (e) { cfg = {}; }
+      const out = { quickReplies: parseQuick(cfg.quickReplies), ready: Number(cfg.version || 0) >= 6 };
+      if (owner) out.autoReply = cfg.autoReply || null;
+      return res.status(200).json(out);
+    }
+    if (a === "saveAutomation") {
+      if (!owner) return res.status(403).json({ error: "Only the account owner can change automatic replies." });
+      const ar = b.autoReply || {};
+      const pairs = [];
+      if (b.autoReply) {
+        pairs.push(["AUTO_EMAIL_ON", ar.emailOn ? "true" : "false"], ["AUTO_EMAIL_SUBJECT", clip(ar.subject, 200)],
+          ["AUTO_EMAIL_BODY", String(ar.body || "").slice(0, 4000)], ["AUTO_WA_ON", ar.waOn ? "true" : "false"], ["AUTO_WA_TEMPLATE", clip(ar.waTemplate, 100)]);
+      }
+      if (Array.isArray(b.quickReplies)) {
+        const q = b.quickReplies.filter((x) => x && String(x.title || "").trim() && String(x.text || "").trim()).slice(0, 20)
+          .map((x) => ({ title: clip(x.title, 40), text: String(x.text).slice(0, 1000) }));
+        pairs.push(["QUICK_REPLIES", JSON.stringify(q)]);
+      }
+      for (const [key, value] of pairs) {
+        const r = await store("setConfig", { key, value }).catch((e) => ({ ok: false, error: String(e.message || e) }));
+        if (r.ok === false) return res.status(409).json({ error: "Update the CRM backend first (Integrations → Update backend).", needsUpdate: true });
+      }
+      clearCache();
+      return res.status(200).json({ ok: true });
+    }
+    if (a === "testAutoReply") {
+      if (!owner) return res.status(403).json({ error: "Only the account owner can send a test." });
+      const r = await store("testAutoReply", { to: s.email, name: (s.name || "").split(" ")[0] }).catch((e) => ({ ok: false, error: String(e.message || e) }));
+      if (!r.ok) return res.status(409).json({ error: /unknown action/.test(r.error || "") ? "Update the CRM backend first (Integrations → Update backend)." : "Test email failed: " + r.error });
+      return res.status(200).json({ ok: true, to: s.email });
     }
     if (a === "regenHookKeys") {
       if (!owner) return res.status(403).json({ error: "Only the account owner can change API keys." });

@@ -147,6 +147,7 @@
     load().then(function () { if (m) openSheet(m[1]); });
     if (me.role === "owner") checkSystem();
     api("waStatus").then(function (s) { wa = s; }).catch(function () {});
+    loadAutomation();
   }
 
   var loadTimer;
@@ -203,6 +204,8 @@
       (l.value ? '<span class="val">' + esc(inrShort(l.value)) + "</span>" : "") +
       '<span class="t">' + esc(l.name || l.contact) + "</span>" +
       '<span class="m">' + esc([l.niche, l.city].filter(Boolean).join(" · ")) + "</span>" + chipsFor(l) + d +
+      (function () { var st = stats(l); var parts = []; if (st.call) parts.push("📞" + st.call); if (st.whatsapp) parts.push("💬" + st.whatsapp); if (st.email) parts.push("✉️" + st.email);
+        return parts.length || st.last ? '<span class="owner">' + parts.join("  ") + (st.last ? (parts.length ? " · " : "") + "Last contact " + ago(st.last) : "") + "</span>" : ""; })() +
       (l.assignedTo ? '<span class="owner">👤 ' + esc(nameOf(l.assignedTo)) + "</span>" : "") + "</button>";
   }
 
@@ -238,11 +241,12 @@
   function renderList(list) {
     if (!leads.length) return emptyState();
     if (!list.length) return '<div class="empty"><h3>No leads match these filters</h3></div>';
-    return '<div class="table-wrap"><table><thead><tr><th>Business</th><th>City</th><th>Services</th><th>Source</th><th>Stage</th><th>Owner</th><th>Value</th><th>Follow-up</th></tr></thead><tbody>' +
+    return '<div class="table-wrap"><table><thead><tr><th>Business</th><th>City</th><th>Services</th><th>Source</th><th>Stage</th><th>Owner</th><th>Activity</th><th>Value</th><th>Follow-up</th></tr></thead><tbody>' +
       list.slice().sort(function (a, b) { return (b.updatedAt || "").localeCompare(a.updatedAt || ""); }).map(function (l) {
         return '<tr class="row" data-id="' + esc(l.id) + '"><td><strong>' + esc(l.name || l.contact) + '</strong><div style="color:var(--muted);font-size:12px">' + esc([l.contact, l.phone].filter(Boolean).join(" · ")) + "</div></td>" +
           "<td>" + esc(l.city) + "</td><td>" + esc((l.services || []).join(", ")) + "</td><td>" + esc(l.source) + "</td>" +
           '<td><span class="stage-pill ' + esc(l.stage) + '">' + esc(stageName(l.stage)) + "</span></td><td>" + esc(nameOf(l.assignedTo)) + "</td>" +
+          (function () { var st = stats(l); return '<td class="num" style="white-space:nowrap">📞' + st.call + " 💬" + st.whatsapp + " ✉️" + st.email + (st.last ? '<div style="color:var(--muted);font-size:12px">' + esc(ago(st.last)) + "</div>" : "") + "</td>"; })() +
           '<td class="num">' + (l.value ? esc(inr(l.value)) : "—") + '</td><td><span class="due ' + (isOpen(l) ? dueClass(l.followUp) : "") + '">' + esc(fmtDate(l.followUp)) + "</span></td></tr>";
       }).join("") + "</tbody></table></div>";
   }
@@ -277,6 +281,17 @@
       '<div class="panel"><h3>Pipeline by stage</h3><div class="bars">' + barRows(STAGES.map(function (s) { return [s.name, leads.filter(function (l) { return l.stage === s.id; }).length]; })) + "</div></div>" +
       '<div class="panel"><h3>Leads by service</h3><div class="bars">' + barRows(SERVICE_GROUPS.map(function (g) { return [g.name, leads.filter(function (l) { return groupsOf(l).indexOf(g) >= 0; }).length]; }).sort(function (a, b) { return b[1] - a[1]; }), "wd") + '</div></div>' +
       '<div class="panel"><h3>Open pipeline by service line</h3><div class="bars">' + barRows([["Digital marketing", dmV, inrShort(dmV)], ["Web development", wdV, inrShort(wdV)]]) + '</div></div>' +
+      (function () {
+        var since = new Date(Date.now() - 7 * 864e5).toISOString(), per = {}, outcomes = {};
+        leads.forEach(function (l) { (l.log || []).forEach(function (e) {
+          var ty = guessType(e); if (!ty || ty === "note" || e.auto || e.by === "Website" || e.t < since) return;
+          var who = e.by || "Unknown"; per[who] = per[who] || { call: 0, whatsapp: 0, email: 0, meeting: 0 }; if (per[who][ty] != null) per[who][ty]++;
+          if (ty === "call" && e.outcome) outcomes[e.outcome] = (outcomes[e.outcome] || 0) + 1;
+        }); });
+        var rows = Object.keys(per).map(function (k) { var p = per[k]; return "<tr><td>" + esc(k) + '</td><td class="num">' + p.call + '</td><td class="num">' + p.whatsapp + '</td><td class="num">' + p.email + '</td><td class="num">' + p.meeting + "</td></tr>"; }).join("");
+        return '<div class="panel"><h3>Team activity · last 7 days</h3>' + (rows ? '<div style="overflow-x:auto"><table style="min-width:0"><thead><tr><th>Person</th><th>📞 Calls</th><th>💬 WhatsApp</th><th>✉️ Email</th><th>🤝 Meetings</th></tr></thead><tbody>' + rows + "</tbody></table></div>" : '<div class="col-hint">Log calls, WhatsApp and emails on leads to see activity here.</div>') + "</div>" +
+          '<div class="panel"><h3>Call outcomes · last 7 days</h3><div class="bars">' + (barRows(Object.keys(outcomes).map(function (k) { return [k, outcomes[k]]; }).sort(function (a, b) { return b[1] - a[1]; }), "good") || '<div class="col-hint">No calls logged yet.</div>') + "</div></div>";
+      })() +
       '<div class="panel"><h3>Open leads by owner</h3><div class="bars">' + barRows(by("assignedTo", isOpen), "wd") + "</div></div>" +
       '<div class="panel"><h3>Leads by city</h3><div class="bars">' + barRows(by("city").slice(0, 10)) + "</div></div></div>";
   }
@@ -300,6 +315,45 @@
       };
     });
   }
+  // ---------- activity tracking (calls, WhatsApp, email) ----------
+  var ACT = { call: "📞", whatsapp: "💬", email: "✉️", meeting: "🤝", note: "📝" };
+  var CALL_OUTCOMES = ["Connected", "No answer", "Busy", "Switched off", "Call back later", "Interested", "Not interested", "Wrong number"];
+  var quick = [], autoCfg = null, autoReady = false;
+  function guessType(e) {
+    if (e.type) return e.type;
+    var t = String(e.text || "").toLowerCase();
+    if (/whatsapp/.test(t)) return "whatsapp";
+    if (/\bcall(ed)?\b|phone/.test(t)) return "call";
+    if (/e-?mail/.test(t)) return "email";
+    return "";
+  }
+  function stats(l) {
+    var o = { call: 0, whatsapp: 0, email: 0, meeting: 0, connected: 0, last: "" };
+    (l.log || []).forEach(function (e) {
+      var ty = guessType(e);
+      if (o[ty] != null && e.by !== "Website") { o[ty]++; if (!e.auto && e.t > o.last) o.last = e.t; }
+      if (ty === "call" && /connected|interested/i.test(e.outcome || "") && !/not interested/i.test(e.outcome || "")) o.connected++;
+    });
+    return o;
+  }
+  function ago(iso) {
+    if (!iso) return "";
+    var m = Math.round((Date.now() - new Date(iso).getTime()) / 6e4);
+    if (m < 60) return m + "m ago"; if (m < 1440) return Math.round(m / 60) + "h ago"; return Math.round(m / 1440) + "d ago";
+  }
+  function fillTpl(t, l) {
+    var first = String(l.contact || l.name || "there").trim().split(/\s+/)[0] || "there";
+    var svc = (l.services || []).filter(function (x) { return x !== "Other"; }).join(", ") || "our services";
+    var map = { first_name: first, name: l.contact || l.name || "", business: l.name || "", service: svc, city: l.city || "", my_name: (me && me.name ? me.name.split(" ")[0] : "Team") };
+    return String(t || "").replace(/\{(first_name|name|business|service|city|my_name)\}/g, function (_, k) { return map[k] || ""; });
+  }
+  function loadAutomation() { return api("automation").then(function (j) { quick = j.quickReplies || []; autoCfg = j.autoReply || null; autoReady = !!j.ready; }).catch(function () {}); }
+  function logActivity(id, type, text, outcome, minutes, extraPatch) {
+    return api("patch", { id: id, patch: extraPatch || {}, note: text || "", meta: { type: type, outcome: outcome || "", minutes: minutes || 0 } })
+      .then(function (j) { replaceLead(j.lead); render(); if (state.openId === id) renderSheet(); return j.lead; })
+      .catch(function (e) { toast(e.message); throw e; });
+  }
+
   function byId(id) { return leads.filter(function (l) { return l.id === id; })[0]; }
   function replaceLead(nl) { var i = leads.findIndex(function (l) { return l.id === nl.id; }); if (i >= 0) leads[i] = nl; else leads.push(nl); }
 
@@ -343,9 +397,9 @@
       '<div class="sheet-h"><h2>' + (isNew ? "Add lead" : esc(live.name || live.contact)) + '</h2><button class="btn sm" id="closeS" type="button">Close</button></div>' +
       '<form class="sheet-b" id="leadForm">' +
       (!isNew ? '<div class="actions">' +
-        (phone ? '<code class="num" style="background:var(--raised);padding:4px 8px;border-radius:6px;user-select:all">' + esc(phone) + '</code><a class="btn sm" href="tel:' + esc(phone.replace(/[^\d+]/g, "")) + '">Call</a><a class="btn sm wa" href="https://wa.me/' + waDigits(phone) + '" target="_blank" rel="noopener">Open WhatsApp chat</a>' +
+        (phone ? '<code class="num" style="background:var(--raised);padding:4px 8px;border-radius:6px;user-select:all">' + esc(phone) + '</code><a class="btn sm" id="trkCall" href="tel:' + esc(phone.replace(/[^\d+]/g, "")) + '">📞 Call</a><a class="btn sm wa" id="trkWa" href="https://wa.me/' + waDigits(phone) + '" target="_blank" rel="noopener">💬 WhatsApp</a>' +
           (waReady ? '<button class="btn sm" type="button" id="waSend">Send WhatsApp template</button>' : "") : "") +
-        (live.email ? '<a class="btn sm" href="mailto:' + esc(live.email) + '">Email</a>' : "") +
+        (live.email ? '<a class="btn sm" id="trkMail" href="mailto:' + esc(live.email) + '">✉️ Email</a>' : "") +
         (live.website ? '<a class="btn sm" href="' + esc(/^https?:/.test(live.website) ? live.website : "https://" + live.website) + '" target="_blank" rel="noopener">Website</a>' : "") +
         (live.ref ? '<a class="btn sm" href="' + esc(live.ref) + '" target="_blank" rel="noopener">Source article</a>' : "") + "</div>" : "") +
       (!isNew && (live.budget || live.callTime) ? '<div class="contact-line">' + (live.budget ? '<span class="label">Budget</span> ' + esc(live.budget) + "&nbsp;&nbsp;" : "") + (live.callTime ? '<span class="label">Preferred call</span> ' + esc(live.callTime) : "") + "</div>" : "") +
@@ -366,9 +420,20 @@
       '<div class="actions" aria-label="Quick follow-up dates">' + [["Tomorrow", 1], ["In 3 days", 3], ["Next week", 7], ["In 2 weeks", 14]].map(function (x) { return '<button class="btn sm" type="button" data-days="' + x[1] + '">' + x[0] + "</button>"; }).join("") + '<button class="btn sm" type="button" data-days="">Clear date</button></div>' +
       '<div class="f"><span>Services they need</span><div class="svc">' + svcGrp({ id: "svc", name: "", items: SERVICE_GROUPS.map(function (g) { return g.name; }).concat(legacy) }) + "</div></div>" +
       '<label class="f"><span>Requirement / notes</span><textarea id="l-notes">' + esc(d.notes) + "</textarea></label>" +
+      (!isNew ? (function () {
+        var st = stats(live);
+        var qr = quick.length && (phone || live.email) ? '<div class="f"><span>Quick replies</span><div class="actions">' +
+          (phone && live.email ? '<select id="qrChannel" aria-label="Send quick reply by" style="width:auto"><option value="whatsapp">via WhatsApp</option><option value="email">via Email</option></select>' : "") +
+          quick.map(function (q, i) { return '<button class="btn sm" type="button" data-qr="' + i + '" title="' + esc(fillTpl(q.text, live)) + '">' + esc(q.title) + "</button>"; }).join("") + "</div></div>" : "";
+        return '<div class="contact-line"><span class="label">Contact history</span> 📞 ' + st.call + " calls (" + st.connected + " connected) · 💬 " + st.whatsapp + " WhatsApp · ✉️ " + st.email + " emails" + (st.last ? " · last contact " + esc(ago(st.last)) : " · not contacted yet") + "</div>" + qr;
+      })() : "") +
       (!isNew && live.transcript ? '<details class="box"><summary>AI chat transcript</summary><div class="transcript">' + esc(live.transcript) + "</div></details>" : "") +
-      (!isNew ? '<div class="f"><span>Activity</span><div class="log-add"><input type="text" id="logText" placeholder="Called, sent quote on WhatsApp, asked to call back…" aria-label="New activity note"><button class="btn sm" type="button" id="logAdd">Add</button></div>' +
-        '<div class="log">' + (log.length ? log.map(function (e) { return '<div class="log-item"><div class="when">' + esc(new Date(e.t).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })) + (e.by ? " · " + esc(e.by) : "") + "</div>" + esc(e.text) + "</div>"; }).join("") : '<div class="col-hint">No activity yet.</div>') + "</div></div>" : "") +
+      (!isNew ? '<div class="f"><span>Log activity</span><div class="panel" style="padding:10px;display:flex;flex-direction:column;gap:8px">' +
+        '<div class="actions"><select id="actType" aria-label="Activity type" style="width:auto">' + opts([["call", "📞 Call"], ["whatsapp", "💬 WhatsApp"], ["email", "✉️ Email"], ["meeting", "🤝 Meeting"], ["note", "📝 Note"]], state.actType || "call") + "</select>" +
+        '<select id="actOutcome" aria-label="Call outcome" style="width:auto"' + ((state.actType || "call") === "call" ? "" : " hidden") + ">" + opts(CALL_OUTCOMES, state.actOutcome || "", "Outcome…") + "</select>" +
+        '<input type="number" id="actMin" min="0" max="600" placeholder="Minutes" aria-label="Duration in minutes" style="width:96px"' + (/^(call|meeting)$/.test(state.actType || "call") ? "" : " hidden") + "></div>" +
+        '<div class="log-add"><input type="text" id="logText" placeholder="What happened? e.g. Interested in SEO, wants quote by Friday" aria-label="Activity note"><button class="btn sm primary" type="button" id="logAdd">Log</button></div></div></div>' +
+        '<div class="f"><span>Activity</span><div class="log">' + (log.length ? log.map(function (e) { var ty = guessType(e); return '<div class="log-item"' + (ty ? ' style="border-left-color:' + ({ call: "var(--good)", whatsapp: "var(--wa)", email: "var(--dm)", meeting: "var(--gold)" }[ty] || "var(--line-strong)") + '"' : "") + '><div class="when">' + (ACT[ty] ? ACT[ty] + " " : "") + esc(new Date(e.t).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })) + (e.by ? " · " + esc(e.by) : "") + (e.outcome ? ' · <strong>' + esc(e.outcome) + "</strong>" : "") + (e.minutes ? " · " + e.minutes + " min" : "") + "</div>" + esc(e.text) + "</div>"; }).join("") : '<div class="col-hint">No activity yet.</div>') + "</div></div>" : "") +
       "</form>" +
       '<div class="sheet-f"><button class="btn primary" type="submit" form="leadForm" id="saveBtn">' + (isNew ? "Add lead" : "Save changes") + "</button>" +
       (!isNew && me.role === "owner" ? (state.confirmDel ? '<div class="confirm">Delete this lead for everyone? <button class="btn sm danger" type="button" id="delYes">Delete</button><button class="btn sm" type="button" id="delNo">Keep</button></div>' : '<button class="btn danger" type="button" id="delBtn" style="margin-left:auto">Delete</button>') : "") +
@@ -390,9 +455,36 @@
     };
     var la = $("#logAdd", r);
     if (la) {
-      var go = function () { var t = $("#logText", r).value.trim(); if (!t) return; sync(); la.disabled = true; patch(live.id, {}, t, true).finally(function () { la.disabled = false; }); };
+      var at = $("#actType", r), ao = $("#actOutcome", r), am = $("#actMin", r);
+      at.onchange = function () { state.actType = at.value; ao.hidden = at.value !== "call"; am.hidden = !/^(call|meeting)$/.test(at.value); };
+      ao.onchange = function () { state.actOutcome = ao.value; };
+      var go = function () {
+        var type = at.value, t = $("#logText", r).value.trim(), oc = type === "call" ? ao.value : "";
+        if (!t && !oc) { toast(type === "call" ? "Pick the call outcome or write a note" : "Write what happened"); return; }
+        sync(); la.disabled = true;
+        var label = { call: "Call", whatsapp: "WhatsApp", email: "Email", meeting: "Meeting", note: "" }[type];
+        var extra = {};
+        if (type === "call" && live.stage === "new" && oc && !/wrong number/i.test(oc)) extra.stage = "contacted";
+        if (oc === "Call back later" || oc === "No answer" || oc === "Busy" || oc === "Switched off") extra.followUp = istDate(1);
+        logActivity(live.id, type, t || (label + (oc ? ": " + oc : "")), oc, am.value, extra).then(function () { state.actOutcome = ""; toast(label ? label + " logged" : "Note added"); }).finally(function () { la.disabled = false; });
+      };
       la.onclick = go; $("#logText", r).onkeydown = function (e) { if (e.key === "Enter") { e.preventDefault(); go(); } };
     }
+    // Clicking Call/WhatsApp/Email tracks it: WhatsApp & email are logged at once, a call asks for its outcome.
+    var tc = $("#trkCall", r); if (tc) tc.addEventListener("click", function () { state.actType = "call"; setTimeout(function () { renderSheet(); var o = $("#actOutcome"); if (o) { o.focus(); o.scrollIntoView({ block: "center" }); } toast("After the call, pick the outcome and click Log"); }, 300); });
+    var tw = $("#trkWa", r); if (tw) tw.addEventListener("click", function () { logActivity(live.id, "whatsapp", "Opened WhatsApp chat").catch(function () {}); });
+    var tm = $("#trkMail", r); if (tm) tm.addEventListener("click", function () { logActivity(live.id, "email", "Opened email to " + live.email).catch(function () {}); });
+    r.querySelectorAll("[data-qr]").forEach(function (b) {
+      b.onclick = function () {
+        var q = quick[+b.dataset.qr]; if (!q) return;
+        var text = fillTpl(q.text, live);
+        var ch = $("#qrChannel", r) ? $("#qrChannel", r).value : (phone ? "whatsapp" : "email");
+        var url = ch === "whatsapp" ? "https://wa.me/" + waDigits(phone) + "?text=" + encodeURIComponent(text)
+          : "mailto:" + live.email + "?subject=" + encodeURIComponent("Mediamozak – " + (fillTpl("{service}", live))) + "&body=" + encodeURIComponent(text);
+        window.open(url, "_blank", "noopener");
+        logActivity(live.id, ch, "Sent quick reply “" + q.title + "” on " + (ch === "whatsapp" ? "WhatsApp" : "email") + ": " + text.slice(0, 300), "", 0, live.stage === "new" ? { stage: "contacted" } : {}).catch(function () {});
+      };
+    });
     var ws = $("#waSend", r);
     if (ws) ws.onclick = function () {
       ws.disabled = true; ws.textContent = "Sending…";
@@ -433,7 +525,8 @@
         '<label class="f"><span>New-lead alert template</span><input type="text" id="w-alertTemplate" value="' + esc(w.alertTemplate || "") + '" placeholder="new_lead_alert"></label>' +
         '<label class="f"><span>Reply template</span><input type="text" id="w-replyTemplate" value="' + esc(w.replyTemplate || "") + '" placeholder="lead_followup"></label>' +
         '<label class="f"><span>Template language</span><input type="text" id="w-lang" value="' + esc(w.alertLang || "en") + '"></label></div><div><button class="btn sm primary" type="button" id="wSave">Save WhatsApp settings</button></div>' : '<p class="help">Ask the owner to set up WhatsApp.</p>') + "</section>" +
-      '<section><h3>Automatic emails</h3><p class="help">Every new lead is emailed to mediamozak@gmail.com instantly. A follow-up summary (overdue + due today) goes to you and the team every day at 9 AM IST.</p></section>' +
+      (owner ? '<section id="autoBox"><h3>Automatic replies to new leads</h3><p class="help">Loading…</p></section>' : "") +
+      '<section><h3>Team alerts</h3><p class="help">Every new lead is emailed to mediamozak@gmail.com instantly. A follow-up summary (overdue + due today) goes to you and the team every day at 9 AM IST.</p></section>' +
       "</div></div>";
     var close = function () { root.innerHTML = ""; };
     $("#mScrim").onclick = close; $("#mClose").onclick = close;
@@ -442,6 +535,7 @@
     };
     if (!owner) return;
     renderIntegrations();
+    renderAutomation();
     var refreshTeam = function (msg) { toast(msg); load().then(openSettings); };
     $("#tAdd").onclick = function () {
       api("saveUser", { name: $("#t-name").value, email: $("#t-email").value, password: $("#t-pw").value, role: $("#t-role").value, active: true }).then(function () { refreshTeam("Team member added"); }).catch(function (e) { toast(e.message); });
@@ -470,6 +564,42 @@
       api("waConfig", { config: { phoneId: $("#w-phoneId").value, token: $("#w-token").value, alertTo: $("#w-alertTo").value, alertTemplate: $("#w-alertTemplate").value, replyTemplate: $("#w-replyTemplate").value, alertLang: lang, replyLang: lang } })
         .then(function (s) { wa = s; toast("WhatsApp settings saved"); openSettings(); }).catch(function (e) { toast(e.message); });
     };
+  }
+
+  function renderAutomation() {
+    var box = $("#autoBox"); if (!box) return;
+    loadAutomation().then(function () {
+      var a = autoCfg || { emailOn: false, subject: "Thanks for contacting Mediamozak, {first_name}!", body: "", waOn: false, waTemplate: "" };
+      var qs = quick.slice();
+      var qRow = function (q, i) { return '<div class="panel qr-row" style="padding:10px;display:flex;flex-direction:column;gap:6px"><div class="actions"><input type="text" class="qr-title" value="' + esc(q.title) + '" placeholder="Button name" style="flex:1;min-width:140px" aria-label="Quick reply name"><button class="btn sm danger" type="button" data-qrdel="' + i + '">Remove</button></div><textarea class="qr-text" rows="2" aria-label="Quick reply message">' + esc(q.text) + "</textarea></div>"; };
+      box.innerHTML = "<h3>Automatic replies to new leads</h3>" +
+        (!autoReady ? '<p class="notice" style="margin:0">Update the CRM backend first (Integrations → Update backend) to switch these on and to save your own quick replies. The default quick replies already work in every lead.</p>' : "") +
+        '<p class="help">Sent instantly when a lead arrives from the website, chatbot, Meta, Google, IndiaMART, JustDial or the Lead API. Placeholders: {first_name} {name} {business} {service} {city}. Each auto-reply is recorded in the lead\'s activity.</p>' +
+        '<label class="actions"><input type="checkbox" id="arEmailOn"' + (a.emailOn ? " checked" : "") + '> <strong>Auto-reply by email</strong> <span class="help">(sent from your Google account as “Mediamozak”; replies come to mediamozak@gmail.com)</span></label>' +
+        '<label class="f"><span>Subject</span><input type="text" id="arSubject" value="' + esc(a.subject) + '"></label>' +
+        '<label class="f"><span>Message</span><textarea id="arBody" rows="8">' + esc(a.body) + "</textarea></label>" +
+        '<label class="actions"><input type="checkbox" id="arWaOn"' + (a.waOn ? " checked" : "") + '> <strong>Auto-reply on WhatsApp</strong> <span class="help">(needs WhatsApp Business set up; uses an approved template with {{1}} = first name, {{2}} = service)</span></label>' +
+        '<label class="f"><span>WhatsApp template name</span><input type="text" id="arWaTpl" value="' + esc(a.waTemplate) + '" placeholder="new_lead_welcome"></label>' +
+        '<div class="actions"><button class="btn sm primary" type="button" id="arSave">Save automatic replies</button><button class="btn sm" type="button" id="arTest">Send test email to me</button></div>' +
+        '<h3 style="margin-top:8px">Quick reply templates</h3><p class="help">One-tap messages in every lead\'s panel. They open WhatsApp or email with the text filled in, and are logged automatically. Placeholders: {first_name} {business} {service} {city} {my_name}.</p>' +
+        '<div id="qrList" style="display:flex;flex-direction:column;gap:8px">' + qs.map(qRow).join("") + "</div>" +
+        '<div class="actions"><button class="btn sm" type="button" id="qrAdd">+ Add template</button><button class="btn sm primary" type="button" id="qrSave">Save quick replies</button></div>';
+      var collect = function () { return Array.prototype.map.call(box.querySelectorAll(".qr-row"), function (row) { return { title: row.querySelector(".qr-title").value, text: row.querySelector(".qr-text").value }; }); };
+      var bindDel = function () { box.querySelectorAll("[data-qrdel]").forEach(function (b) { b.onclick = function () { b.closest(".qr-row").remove(); }; }); };
+      bindDel();
+      $("#qrAdd").onclick = function () { $("#qrList").insertAdjacentHTML("beforeend", qRow({ title: "", text: "Hi {first_name}, " }, Date.now())); bindDel(); };
+      $("#qrSave").onclick = function () {
+        api("saveAutomation", { quickReplies: collect() }).then(function () { toast("Quick replies saved"); loadAutomation(); }).catch(function (e) { toast(e.message); });
+      };
+      $("#arSave").onclick = function () {
+        api("saveAutomation", { autoReply: { emailOn: $("#arEmailOn").checked, subject: $("#arSubject").value, body: $("#arBody").value, waOn: $("#arWaOn").checked, waTemplate: $("#arWaTpl").value } })
+          .then(function () { toast("Automatic replies saved"); loadAutomation(); }).catch(function (e) { toast(e.message); });
+      };
+      $("#arTest").onclick = function () {
+        api("saveAutomation", { autoReply: { emailOn: $("#arEmailOn").checked, subject: $("#arSubject").value, body: $("#arBody").value, waOn: $("#arWaOn").checked, waTemplate: $("#arWaTpl").value } })
+          .then(function () { return api("testAutoReply", {}); }).then(function (j) { toast("Test email sent to " + j.to); }).catch(function (e) { toast(e.message); });
+      };
+    });
   }
 
   var sys = null;
