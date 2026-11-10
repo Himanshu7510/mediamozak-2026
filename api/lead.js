@@ -24,7 +24,7 @@ module.exports = async (req, res) => {
       summary: b.message,
       page: b.page,
     });
-    await finalizeLead(id, { attribution: b.attribution, servicesText: [b.service, b.message].join(" ") });
+    await finalizeLead(id, { attribution: b.attribution, servicesText: b.service || "" });
     return res.status(200).json({ ok: true, id });
   } catch (e) {
     console.error(e);

@@ -67,7 +67,7 @@ const TOOLS = [
         email: { type: "string" },
         business: { type: "string", description: "Business name and type" },
         city: { type: "string" },
-        services: { type: "string", description: "Services they need, comma separated, e.g. New website, Landing page, E-commerce store, SEO, Local SEO / GMB, Social media, Reels, Google ads, Meta ads, YouTube ads, Shopify store CRO, Blinkit / Zepto / Instamart listings, Lead generation campaign, B2B LinkedIn outreach" },
+        services: { type: "string", description: "Which of Mediamozak's services they need, comma separated, using exactly these names: Web Development Services, Social Media Marketing Services, Performance Marketing Services, E-com Marketing, Quick-com Marketing, Lead Generation Services, Search Engine Optimization (SEO), Other" },
         budget: { type: "string" },
         call_time: { type: "string", description: "Preferred callback slot with date, e.g. 'Wed 12 Nov, 11 AM–1 PM IST'" },
         call_date: { type: "string", description: "Preferred callback date as YYYY-MM-DD if known" },
@@ -132,7 +132,7 @@ module.exports = async (req, res) => {
             services: i.services, budget: i.budget, callTime: i.call_time, callDate: i.call_date, language: i.language,
             summary: i.summary, transcript: transcript(raw), page,
           });
-          await finalizeLead(id, { attribution: b.attribution, servicesText: [i.services, i.summary].join(" ") });
+          await finalizeLead(id, { attribution: b.attribution, servicesText: i.services || i.summary || "" });
           leadSaved = true;
           content = "Saved. Lead id " + id + ". Confirm the callback to the visitor.";
         } catch (e) {

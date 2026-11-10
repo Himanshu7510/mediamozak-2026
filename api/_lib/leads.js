@@ -108,27 +108,25 @@ function describeAttribution(a) {
 
 // Map what the visitor picked or said onto the CRM's service list
 // (grouped like mediamozak.com/services).
+const W = "Web Development Services", SM = "Social Media Marketing Services", P = "Performance Marketing Services",
+  E = "E-com Marketing", Q = "Quick-com Marketing", L = "Lead Generation Services", S = "Search Engine Optimization (SEO)";
 const SERVICE_RULES = [
-  [/web ?dev|website|web site|site banwa|वेबसाइट/i, "New website"], [/redesign|revamp/i, "Website redesign"],
-  [/landing/i, "Landing page"], [/web ?app|portal|dashboard|software/i, "Web app / portal"], [/cms|wordpress/i, "Custom CMS"],
-  [/maintenance|hosting|support/i, "Website maintenance"],
-  [/\bseo\b|search engine|rank|organic/i, "SEO"], [/local seo|gmb|google business|google maps|map listing/i, "Local SEO / GMB"],
-  [/technical seo|core web vitals|page speed/i, "Technical SEO & Core Web Vitals"], [/backlink|link building/i, "Link building"], [/blog|content writing|article/i, "SEO content & blogs"],
-  [/social media|instagram page|facebook page|smm/i, "Social media"], [/reel|short video|shorts/i, "Reels & short videos"],
-  [/influencer/i, "Influencer collaborations"], [/community/i, "Community management"],
-  [/performance marketing|google ads?|adwords|ppc|search ads/i, "Google ads"], [/performance marketing|meta ads?|facebook ads?|instagram ads?/i, "Meta ads"],
-  [/youtube ads?/i, "YouTube ads"], [/pixel|conversion api|capi/i, "Pixel & Conversion API setup"],
-  [/e-?com marketing|shopify|woocommerce|online store sales/i, "Shopify / WooCommerce store CRO"], [/catalog|remarketing|retarget/i, "Catalog & remarketing ads"],
-  [/abandon/i, "Abandoned-cart automation"], [/whatsapp marketing|email marketing|sms marketing|retention/i, "WhatsApp / email marketing"],
-  [/e-?commerce (site|website|store)|online store/i, "E-commerce store"],
-  [/quick-?com|blinkit|zepto|instamart|swiggy/i, "Blinkit / Zepto / Instamart listings"],
-  [/lead gen|more leads|leads chahiye|enquir(y|ies)|lead generation/i, "Lead generation campaign"], [/quiz/i, "Quiz funnels"],
-  [/\bcrm\b/i, "CRM integration & sync"], [/nurtur|drip/i, "Lead nurturing automation"], [/linkedin/i, "B2B LinkedIn outreach"],
+  [/web ?dev|website|web site|landing page|web ?app|portal|wordpress|\bcms\b|redesign|वेबसाइट|site banwa/i, W],
+  [/social media|smm|instagram page|facebook page|reel|influencer|content creation|community/i, SM],
+  [/performance|google ads?|adwords|\bppc\b|meta ads?|facebook ads?|instagram ads?|youtube ads?|paid ads?|pixel|conversion api/i, P],
+  [/e-?com(merce)? marketing|shopify|woocommerce|online store|abandon|catalog|remarketing|retarget/i, E],
+  [/quick-?com|blinkit|zepto|instamart|swiggy instamart/i, Q],
+  [/lead gen|more leads|leads chahiye|enquir(y|ies)|funnel|\bcrm\b|linkedin|nurtur|drip/i, L],
+  [/\bseo\b|search engine|google (rank|ranking|maps|business)|\bgmb\b|organic|backlink|local seo/i, S],
 ];
+const ORDER = [W, SM, P, E, Q, L, S, "Other"];
 function mapServices(text) {
-  const out = [];
-  for (const [re, label] of SERVICE_RULES) if (re.test(String(text || "")) && !out.includes(label)) out.push(label);
-  return out;
+  const t = String(text || "").trim();
+  const got = new Set();
+  for (const [re, label] of SERVICE_RULES) if (re.test(t)) got.add(label);
+  if (/not sure|multiple services/i.test(t) && !got.size) return [];
+  if (!got.size && t && /\w{4,}/.test(t)) got.add("Other");
+  return ORDER.filter((x) => got.has(x));
 }
 
 // After a website lead is saved: set the services from the website's own names,
