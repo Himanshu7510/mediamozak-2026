@@ -65,7 +65,8 @@ async function saveLead(lead) {
   let j = {};
   try { j = JSON.parse(text); } catch (e) {}
   if (!r.ok || !j.ok) {
-    const hint = (text.match(/<title>([^<]*)<\/title>/i) || [])[1] || text.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 160);
+    const body = (text.match(/<body[\s\S]*?<\/body>/i) || [text])[0];
+    const hint = body.replace(/<(script|style)[\s\S]*?<\/\1>/gi, " ").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 300);
     throw new Error("Lead inbox rejected the lead (" + r.status + "): " + (j.error || hint));
   }
   return j.id;
