@@ -1,4 +1,4 @@
-/* Blog article and listing styles. Loaded only on /blog/ pages, alongside site.css. */
+/* Long-form content styles (.prose, FAQs, blog cards). Loaded on blog, service, about and home pages, alongside site.css. */
 .prose{color:#d1d5db;font-size:1.0625rem;line-height:1.8}
 .prose>*+*{margin-top:1.25em}
 .prose .lead{font-size:1.2rem;color:#e5e7eb;line-height:1.7}
