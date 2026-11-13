@@ -53,5 +53,18 @@
         }
       ]
     }
+  ],
+  "redirects": [
+    {
+      "source": "/:path*",
+      "has": [
+        {
+          "type": "host",
+          "value": "www.mediamozak.com"
+        }
+      ],
+      "destination": "https://mediamozak.com/:path*",
+      "statusCode": 301
+    }
   ]
 }
